@@ -396,7 +396,7 @@ function clamp(percent) {
 
 // ---------- The line ----------
 
-// Each block: { key, tip, rank, cells, parts, grow?, gap?, tipRight? }, gap the cells before it (3, or fewer
+// Each block: { key, tip, rank, cells, parts, grow?, gap? }, gap the cells before it (3, or fewer
 // for a block that goes with the one before). When the line is wider than the band, the
 // lowest ranks go first. The bars (grow) then flex into the room left, so the line fills the band: grow is true where
 // they flex, or in text a function drawing the block with its bar that many cells wide. Without Svg
@@ -432,7 +432,7 @@ function drawLine(elements, columns, now) {
   // Back in display order.
   const children = blocks
     .filter((b) => kept.includes(b))
-    .map((b, i) => withTip(elements, b.key, partsOf(b), Svg ? b.tip : null, gapOf(b, i), b.grow === true, b.tipRight));
+    .map((b, i) => withTip(elements, b.key, partsOf(b), Svg ? b.tip : null, gapOf(b, i), b.grow === true));
   const m = mood ?? { look: "idle", tip: T.moods.idle, at: now };
   const otto = Svg ? [Box({ flexShrink: 0, children: [withTip(elements, "otto", [Svg({ key: "svg", source: ottoSvg(m.look, now - m.at), alt: m.tip, width: OTTO.width, height: OTTO.height })], m.tip)] })] : [];
   return Box({
@@ -453,14 +453,12 @@ const plain = (tip) => lines(tip).join("\n");
 
 // Every block carries its details in a card shown on hover anywhere over it, the band's full height
 // (the line stretches its blocks), laid over the band. Plain images, no interactive frame: the
-// desktop rebuilds the band on every redraw, and frames flash as they reload. A null tip: no card. The card starts
-// at the block's left edge, or with `right` ends at its right edge, so a block near the band's right end keeps it
-// in view.
-function withTip({ Box, Text }, key, parts, tip, gap = 0, grow = false, right = false) {
+// desktop rebuilds the band on every redraw, and frames flash as they reload. A null tip: no card.
+function withTip({ Box, Text }, key, parts, tip, gap = 0, grow = false) {
   const card = tip !== null && Box({
     position: "absolute",
     top: 0,
-    ...(right ? { right: 0 } : { left: 0 }),
+    left: 0,
     display: "none",
     hover: { display: "flex" },
     flexDirection: "column",
@@ -541,8 +539,7 @@ function gaugeBlock({ Box, Svg, Text }, g, now, rank) {
   // Only the bar gives: its label and value keep their room, on one line.
   const fixed = (key, text) => Box({ key, flexShrink: 0, children: [text] });
   const partsAt = (bar) => [fixed("label", labelText), bar, fixed("value", valueText)];
-  // The gauges run to the band's right end: their card ends where they do.
-  return { key: "limit-" + label, tip, rank, cells, tipRight: true, grow: Svg ? true : (n) => partsAt(textBar(n)), parts: partsAt(Svg ? svgBar() : textBar(TEXT_GAUGE)) };
+  return { key: "limit-" + label, tip, rank, cells, grow: Svg ? true : (n) => partsAt(textBar(n)), parts: partsAt(Svg ? svgBar() : textBar(TEXT_GAUGE)) };
 }
 
 // ---------- Otto ----------

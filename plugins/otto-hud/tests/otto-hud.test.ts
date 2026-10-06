@@ -75,16 +75,6 @@ test("desktop: icons with tooltips for the forecast, context and limits", async 
   expect(texts.indexOf("5h")).toBeLessThan(texts.indexOf("7d"));
 });
 
-test("tooltips start at the left edge of Otto, the forecast and the prompts, and end at the right edge of the gauges", async ($, on) => {
-  world(on);
-  withUsage(on, 600_000);
-  await start($);
-  const { ui } = await band($);
-  // The cards in the line's order: Otto, the forecast, the prompts, the 5-hour and 7-day gauges.
-  const cards = (await ui.findAll({ type: "Box" })).filter((b: any) => b.props?.position === "absolute").map((b: any) => [b.props.left, b.props.right]);
-  expect(cards).toEqual([[0, undefined], [0, undefined], [0, undefined], [undefined, 0], [undefined, 0]]);
-});
-
 test("the terminal draws the line in text, without Otto or tooltips", async ($, on) => {
   world(on);
   withUsage(on, 600_000);
