@@ -75,6 +75,21 @@ test("desktop: icons with tooltips for the forecast, context and limits", async 
   expect(texts.indexOf("5h")).toBeLessThan(texts.indexOf("7d"));
 });
 
+test("the forecast and its percent follow the context after each response, live; the prompts' bars only at the turn's end", async ($, on) => {
+  world(on);
+  withUsage(on, 600_000);
+  on("session.measure", (_$: any, e: any) => ({ changed: e.changed }));
+  await start($);
+  expect((await band($)).texts).toContain("60%");
+  // A response within a turn: session.measure brings the context, 700k of the 1M window, 78% of the way to compaction.
+  await $.session.measure({ context: { tokens: 700_000, window: 1_000_000, percent: 70 }, rateLimits: [], changed: ["context"] } as any);
+  const { texts, alts } = await band($);
+  expect(texts).toContain("70%");
+  expect(alts.some((a: string) => a.startsWith("Storm\n70% of the context used\n78% of the way"))).toBe(true);
+  // No turn ended: the prompts' bars still wait for one.
+  expect(texts).toContain("—");
+});
+
 test("the terminal draws the line in text, without Otto or tooltips", async ($, on) => {
   world(on);
   withUsage(on, 600_000);
