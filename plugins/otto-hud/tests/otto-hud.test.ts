@@ -75,13 +75,28 @@ test("desktop: icons with tooltips for the forecast, context and limits", async 
   expect(texts.indexOf("5h")).toBeLessThan(texts.indexOf("7d"));
 });
 
-test("the terminal draws nothing", async ($, on) => {
+test("the terminal draws the line in text, without Otto or tooltips", async ($, on) => {
   world(on);
   withUsage(on, 600_000);
   await start($);
-  const { texts, alts } = await band($, "terminal");
+  // The line takes 59 cells with its bars at their least, 10 cells.
+  const { ui, texts, alts } = await band($, "terminal", 59);
   expect(alts).toEqual([]);
-  expect(texts).toEqual([]);
+  // Showers at 67% of the way to compaction; no prompt measured yet; the 5-hour limit 32% used (3 cells and a
+  // quarter of 10), 80% by the reset: solid, faded, the track, all full cells.
+  for (const t of ["☂", "60%", "▁▁▁▁▁▁▁▁", "—", "5h", "███", "▎", "████", "██", "32%"]) expect(texts).toContain(t);
+  // The quarter cell's other three quarters are the faded color that follows it, not the terminal's background.
+  const quarter = (await ui.findAll({ type: "Text" })).find((t: any) => t.text === "▎").props;
+  expect(quarter.backgroundColor).toMatch(/^#[0-9a-f]{6}$/);
+  expect(quarter.backgroundColor).not.toBe(quarter.color);
+  expect((await ui.findAll({ type: "Text" })).some((t: any) => t.props?.color === "text")).toBe(false);
+  // What it draws, with the gaps between its blocks (3) and their parts (1) and its padding, fits.
+  const drawn = (t: string[]) => t.join("").length + 3 * 3 + 6 + 1;
+  expect(drawn(texts)).toBe(59);
+  // 16 cells wider, each bar takes 8 of them: 32% of 18 cells is 5 and three quarters.
+  const wider = (await band($, "terminal", 75)).texts;
+  for (const t of ["█████", "▊", "████████", "████"]) expect(wider).toContain(t);
+  expect(drawn(wider)).toBe(drawn(texts) + 16);
 });
 
 test("a narrow band drops the least important blocks first", async ($, on) => {

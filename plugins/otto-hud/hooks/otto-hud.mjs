@@ -5,8 +5,10 @@
 //
 //   [Otto] ☂ 60% ━━━━╎━╎━   5h ━━━▒▒╎─ 32%   7d ━━━━━╎▒ 59%
 //
-// Icons and bars, their details in a card on hover. Drawn with Svg, so only on surfaces that have it
-// (the desktop app, the editor, mobile); the terminal shows nothing.
+// Icons and bars, their details in a card on hover, drawn with Svg (the desktop app, the editor, mobile). The
+// terminal gets the same line in text, glyphs and block bars, without Otto or cards:
+//
+//   ☂ 60% ▂▃▅█ +6.3k   5h ███▎██████ 32%   7d █████▊████ 59%  (used, faded on to the pace's end, the track)
 //
 // The weather after Anthropic's Token Weather. What is new: Otto, the forecast scaled to
 // auto-compact, what the context is made of, and the account limits.
@@ -147,6 +149,12 @@ const GAUGE = { width: 72, height: 9 };
 const WEATHER_SIZE = 22;
 // Tooltip cards: theme keys, not raw colors, so they follow the light or dark theme.
 const TIP = { back: "userMessageBackground", text: "text" };
+// On the terminal: a glyph per forecast, in its tint; eighths of a cell, from the bottom for the prompts' bars and
+// from the left for the limits'; a limit's bar at the least, in cells, and its track's color (a grey that shows on
+// dark and light themes alike).
+const GLYPHS = { clear: "☀", cloudy: "☁", showers: "☂", storm: "↯", compact: "⚠" };
+const EIGHTHS = "▁▂▃▄▅▆▇█", LEFT_EIGHTHS = " ▏▎▍▌▋▊▉█";
+const TEXT_GAUGE = 10, TEXT_TRACK = "#5f6368";
 const WEATHER_COLORS = { clear: "#e0b000", cloudy: "#8ea3b8", showers: "#2f68c0", storm: "#b04fc0", compact: "#d64545" };
 
 // Otto, drawn whole in each mood's SVG (otto.mjs).
@@ -254,10 +262,11 @@ export function register(on, options) {
   });
 
   on("ui.render", { component: "AbovePrompt" }, async ($, e, next) => {
-    const el = $.ui.resolve(e);
-    // Drawings only: none on the terminal (the test kit's table has Svg there too, hence the surface).
+    // The terminal draws the line in text: no Svg there (the test kit's table has one, hence the surface).
+    const resolved = $.ui.resolve(e);
+    const el = e.surface === "terminal" ? { ...resolved, Svg: undefined } : resolved;
     const idle = readings.length === 0 && account.list.length === 0;
-    if (e.surface === "terminal" || !el.Svg || e.props.hasSurvey || idle) return next(e);
+    if (e.props.hasSurvey || idle) return next(e);
     const line = drawLine(el, e.props.bodyColumns ?? 80, await $.clock.now());
     // The mods after us go under our line, without a blank row when they draw nothing.
     const under = await next(e);
@@ -389,7 +398,9 @@ function clamp(percent) {
 
 // Each block: { key, tip, rank, cells, parts, grow?, gap? }, gap the cells before it (3, or fewer
 // for a block that goes with the one before). When the line is wider than the band, the
-// lowest ranks go first. The bars (grow) then flex into the room left, so the line fills the band.
+// lowest ranks go first. The bars (grow) then flex into the room left, so the line fills the band: grow is true where
+// they flex, or in text a function drawing the block with its bar that many cells wide. Without Svg
+// (the terminal) there is no Otto, and no card: the band is one row there, which would cut a card to its first line.
 function drawLine(elements, columns, now) {
   const { Box, Svg } = elements;
   const cur = readings.at(-1);
@@ -403,7 +414,7 @@ function drawLine(elements, columns, now) {
 
   // The blocks and the gaps between them, Otto and the gap after him, and the padding 1 on the right, as much as
   // the room Otto keeps on his left.
-  const ottoCells = OTTO_CELLS + 2;
+  const ottoCells = Svg ? OTTO_CELLS + 2 : 0;
   const gapOf = (b, i) => (i === 0 ? 0 : (b.gap ?? 3));
   let kept = blocks;
   const width = (list) => list.reduce((sum, b, i) => sum + b.cells + gapOf(b, i), 0) + 1 + ottoCells;
@@ -412,12 +423,18 @@ function drawLine(elements, columns, now) {
     kept = kept.filter((b) => b !== lowest);
   }
 
+  // In text the bars cannot flex: those that grow (a function of their bar's cells) share out the cells left. The
+  // band is drawn again at each width, so they follow the terminal's.
+  const growing = kept.filter((b) => typeof b.grow === "function");
+  const spare = Math.max(0, columns - width(kept));
+  const partsOf = (b) => (typeof b.grow !== "function" ? b.parts : b.grow(TEXT_GAUGE + Math.floor(spare / growing.length) + (growing.indexOf(b) < spare % growing.length ? 1 : 0)));
+
   // Back in display order.
   const children = blocks
     .filter((b) => kept.includes(b))
-    .map((b, i) => withTip(elements, b.key, b.parts, b.tip, gapOf(b, i), b.grow));
+    .map((b, i) => withTip(elements, b.key, partsOf(b), Svg ? b.tip : null, gapOf(b, i), b.grow === true));
   const m = mood ?? { look: "idle", tip: T.moods.idle, at: now };
-  const otto = withTip(elements, "otto", [Svg({ key: "svg", source: ottoSvg(m.look, now - m.at), alt: m.tip, width: OTTO.width, height: OTTO.height })], m.tip);
+  const otto = Svg ? [Box({ flexShrink: 0, children: [withTip(elements, "otto", [Svg({ key: "svg", source: ottoSvg(m.look, now - m.at), alt: m.tip, width: OTTO.width, height: OTTO.height })], m.tip)] })] : [];
   return Box({
     width: "100%",
     flexDirection: "row",
@@ -425,7 +442,7 @@ function drawLine(elements, columns, now) {
     paddingRight: 1,
     columnGap: 2,
     // Otto's picture holds his head room (thought bubble, light bulb) above him: not lifted, so he stands in the band.
-    children: [Box({ flexShrink: 0, children: [otto] }), Box({ key: "blocks", flexGrow: 1, minWidth: 0, flexDirection: "row", alignItems: "stretch", children })],
+    children: [...otto, Box({ key: "blocks", flexGrow: 1, minWidth: 0, flexDirection: "row", alignItems: "stretch", children })],
   });
 }
 
@@ -436,9 +453,9 @@ const plain = (tip) => lines(tip).join("\n");
 
 // Every block carries its details in a card shown on hover anywhere over it, the band's full height
 // (the line stretches its blocks), laid over the band. Plain images, no interactive frame: the
-// desktop rebuilds the band on every redraw, and frames flash as they reload.
+// desktop rebuilds the band on every redraw, and frames flash as they reload. A null tip: no card.
 function withTip({ Box, Text }, key, parts, tip, gap = 0, grow = false) {
-  const card = Box({
+  const card = tip !== null && Box({
     position: "absolute",
     top: 0,
     left: 0,
@@ -450,7 +467,7 @@ function withTip({ Box, Text }, key, parts, tip, gap = 0, grow = false) {
     // One line each, the first the title when there are more.
     children: lines(tip).map((line, i, all) => Text({ color: TIP.text, bold: i === 0 && all.length > 1, wrap: "truncate-end", children: line || " " })),
   });
-  return Box({ key, marginLeft: gap, ...(grow ? { flexGrow: 1, flexShrink: 1, minWidth: 0 } : { flexShrink: 0 }), flexDirection: "row", columnGap: 1, alignItems: "center", children: [...parts, card] });
+  return Box({ key, marginLeft: gap, ...(grow ? { flexGrow: 1, flexShrink: 1, minWidth: 0 } : { flexShrink: 0 }), flexDirection: "row", columnGap: 1, alignItems: "center", children: card ? [...parts, card] : parts });
 }
 
 // The forecast, set by the way to auto-compact, and the share of the window used beside it; what
@@ -460,22 +477,30 @@ function weatherBlock({ Svg, Text }, f, cur, categories, now) {
   const at = cur.threshold > 0 ? short(cur.threshold) : "";
   const rows = contents(categories);
   const tip = [...lines(T.tips.weather(T.sky[f.id], cur.percent, weatherPercent(cur), at, short(cur.tokens), short(cur.window))), ...(rows.length > 0 ? ["", T.tips.stack(f.id === "clear"), ...rows] : [])];
-  const parts = [Svg({ key: "svg", source: weatherSvg(f.id, now), alt: plain(tip), width: WEATHER_SIZE, height: WEATHER_SIZE }), Text({ key: "pct", children: pct })];
-  return { key: "weather", tip, rank: 100, cells: Math.ceil(WEATHER_SIZE / 8) + 1 + pct.length, parts };
+  const icon = Svg
+    ? Svg({ key: "svg", source: weatherSvg(f.id, now), alt: plain(tip), width: WEATHER_SIZE, height: WEATHER_SIZE })
+    : Text({ key: "svg", color: WEATHER_COLORS[f.id], children: GLYPHS[f.id] });
+  const parts = [icon, Text({ key: "pct", children: pct })];
+  return { key: "weather", tip, rank: 100, cells: (Svg ? Math.ceil(WEATHER_SIZE / 8) : 1) + 1 + pct.length, parts };
 }
 
 // What each recent prompt added, as bars, and the last turn's change beside them; the same room,
 // and a dash for the change, before the first turn is measured.
 function turnsBlock({ Box, Svg, Text }) {
   const deltas = turnDeltas();
-  const trend = Text({ dimColor: true, children: readings.length >= 2 ? lastTurn() : "—" });
+  const change = readings.length >= 2 ? lastTurn() : "—";
+  const trend = Text({ dimColor: true, children: change });
   const tip = T.tips.turns(deltas.map((d) => `+${short(d.added)}`).join(" "));
   const parts = [
-    Svg({ key: "svg", source: turnsSvg(deltas), alt: tip, width: SPARK_WIDTH, height: SPARK.height }),
+    Svg
+      ? Svg({ key: "svg", source: turnsSvg(deltas), alt: tip, width: SPARK_WIDTH, height: SPARK.height })
+      : Box({ key: "svg", flexShrink: 0, children: textRuns(Text, turnsText(deltas)) }),
     // As wide as its text: the bars after it take up the difference.
     Box({ key: "d", flexShrink: 0, children: [trend] }),
   ];
-  return { key: "turns", tip, rank: 40, cells: Math.ceil(SPARK_WIDTH / 8) + 1 + SPARK.trend, parts };
+  // Counted at its widest where the bars flex, so the line holds still; at its own width in text, where the gauges
+  // take every cell the line leaves.
+  return { key: "turns", tip, rank: 40, cells: (Svg ? Math.ceil(SPARK_WIDTH / 8) + 1 + SPARK.trend : SPARK.bars + 1 + change.length), parts };
 }
 
 // What the context is made of, largest first: a line per category with its share and tokens.
@@ -506,12 +531,15 @@ function gaugeBlock({ Box, Svg, Text }, g, now, rank) {
   // Only the bar is colored, and the value turns red on alert: the label keeps the theme's color.
   const valueText = Text({ key: "v", bold: true, children: value, ...(g.tone === "alert" && { color: "red" }) });
   const labelText = Text({ key: "l", dimColor: true, children: label });
-  // The bar flexes: its box takes the room left, and the drawing fills its box.
-  const bar = Box({ key: "bar", flexGrow: 1, flexShrink: 1, minWidth: 0, children: [Svg({ key: "svg", source: gaugeSvg(g), alt: tip, height: GAUGE.height })] });
-  const cells = label.length + 1 + Math.ceil(GAUGE.width / 8) + 1 + value.length;
+  // The bar flexes: its box takes the room left, and the drawing fills its box. In text it is drawn at the cells
+  // drawLine gives it.
+  const svgBar = () => Box({ key: "bar", flexGrow: 1, flexShrink: 1, minWidth: 0, children: [Svg({ key: "svg", source: gaugeSvg(g), alt: tip, height: GAUGE.height })] });
+  const textBar = (n) => Box({ key: "bar", flexShrink: 0, children: textRuns(Text, gaugeText(g, n)) });
+  const cells = label.length + 1 + (Svg ? Math.ceil(GAUGE.width / 8) : TEXT_GAUGE) + 1 + value.length;
   // Only the bar gives: its label and value keep their room, on one line.
   const fixed = (key, text) => Box({ key, flexShrink: 0, children: [text] });
-  return { key: "limit-" + label, tip, rank, cells, grow: true, parts: [fixed("label", labelText), bar, fixed("value", valueText)] };
+  const partsAt = (bar) => [fixed("label", labelText), bar, fixed("value", valueText)];
+  return { key: "limit-" + label, tip, rank, cells, grow: Svg ? true : (n) => partsAt(textBar(n)), parts: partsAt(Svg ? svgBar() : textBar(TEXT_GAUGE)) };
 }
 
 // ---------- Otto ----------
@@ -641,6 +669,53 @@ function barSvg(height, body, notches = []) {
 // A full-height slice of a bar, from x0 to x1 %.
 function span(x0, x1, fill) {
   return x1 > x0 ? `<rect x="${x0.toFixed(1)}%" width="${(x1 - x0).toFixed(1)}%" height="100%" fill="${fill}"/>` : "";
+}
+
+// ---------- Text ----------
+
+// The prompts' bars in eighths of a cell, as turnsSvg draws them: the latest bright, the earlier dim, an empty slot
+// the lowest eighth, dim.
+function turnsText(deltas) {
+  const most = Math.max(1, ...deltas.map((d) => d.added));
+  const empty = SPARK.bars - deltas.length;
+  return Array.from({ length: SPARK.bars }, (_, i) => {
+    const d = deltas[i - empty];
+    if (d === undefined) return [EIGHTHS[0], { dimColor: true }];
+    return [EIGHTHS[Math.round((d.added / most) * (EIGHTHS.length - 1))], { color: WEATHER_COLORS[d.id], dimColor: i < SPARK.bars - 1 }];
+  });
+}
+
+// A limit as gaugeSvg draws it, `cells` wide, in full cells: solid up to the share used, to the eighth of a cell;
+// faded on up to the share projected; the track after. The cell the share used ends in takes, behind its eighths,
+// the color of what follows, so no gap shows there.
+function gaugeText(g, cells) {
+  const color = TONES[g.tone], faded = mix(color, TEXT_TRACK, 0.55);
+  const at = (percent) => (clamp(percent) / 100) * cells;
+  const used = at(g.used), ahead = at(g.projected ?? 0);
+  return Array.from({ length: cells }, (_, i) => {
+    const after = i + 0.5 < ahead ? faded : TEXT_TRACK;
+    const part = Math.round(Math.min(1, Math.max(0, used - i)) * 8);
+    if (part === 8) return ["█", { color }];
+    if (part > 0) return [LEFT_EIGHTHS[part], { color, backgroundColor: after }];
+    return ["█", { color: after }];
+  });
+}
+
+// Between two #rrggbb colors, `t` of the way from a to b.
+function mix(a, b, t) {
+  const channel = (hex, k) => parseInt(hex.slice(1 + 2 * k, 3 + 2 * k), 16);
+  return "#" + [0, 1, 2].map((k) => Math.round(channel(a, k) + (channel(b, k) - channel(a, k)) * t).toString(16).padStart(2, "0")).join("");
+}
+
+// [glyph, props] cells as Texts, one per run of the same props.
+function textRuns(Text, cells) {
+  const runs = [];
+  for (const [glyph, props] of cells) {
+    const last = runs.at(-1);
+    if (last && JSON.stringify(last[1]) === JSON.stringify(props)) last[0] += glyph;
+    else runs.push([glyph, props]);
+  }
+  return runs.map(([children, props], i) => Text({ key: String(i), ...props, children }));
 }
 
 // ---------- Helpers ----------

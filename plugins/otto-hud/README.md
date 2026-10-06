@@ -2,7 +2,7 @@
 
 Otto, a blue octopus, forecasts your context window, above the prompt. A fork of Anthropic's [Token Weather](https://github.com/anthropics/claude-code-playground/tree/main/claude-code/mods/token-weather).
 
-For now, in the Claude Code desktop app only; the terminal shows nothing.
+Drawn in full in the Claude Code desktop app. In the terminal, the same line in text, without Otto or tooltips: a glyph for the forecast, block bars for the prompts and the limits.
 
 - **Otto** is on the left and acts out what Claude is doing: scratching his head under a thought bubble, puzzled, or as a detective with cap and magnifier while it thinks; at a laptop or a retro computer while it runs tools; sunk and dejected, in a cloud of ink, or sulking under a passing crow when a tool fails; a light bulb, a jump, a dance or a twirl when the turn is done. At rest he now and then looks around, blows bubbles, waves from afar, calls out through his cupped tentacles, knocks at a window that comes in around him, or twirls; he sits and waits while subagents work, and gets dizzy when compaction is near. Every animation starts from his rest pose, and the ones he plays at rest end on it, so he never jumps from one to the next. His tooltip says what Claude is doing. Otto is drawn in vectors, our own character, and not open source: you may use him in otto-hud as published, nothing more (see [OTTO-LICENSE](OTTO-LICENSE)).
 - **`/otto-hud demo`** plays every animation in turn, about 90 s, each with its tooltip; **`/otto-hud <animation>`** plays one (`thinking`, `puzzled`, `detective`, `laptop`, `desktop`, `dejected`, `ink`, `crow`, `lightbulb`, `jump`, `dance`, `twirl`, `lookaround`, `bubbles`, `wave`, `shout`, `tap`, `settle`, `dizzy`).
