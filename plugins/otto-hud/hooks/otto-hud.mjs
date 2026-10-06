@@ -149,10 +149,10 @@ const GAUGE = { width: 72, height: 9 };
 const WEATHER_SIZE = 22;
 // Tooltip cards: theme keys, not raw colors, so they follow the light or dark theme.
 const TIP = { back: "userMessageBackground", text: "text" };
-// On the terminal: a glyph per forecast, in its tint; eighths of a cell, from the bottom for the prompts' bars and
+// On the terminal: a glyph per forecast, Token Weather's own single-width symbols, in its tint; eighths of a cell, from the bottom for the prompts' bars and
 // from the left for the limits'; a limit's bar at the least, in cells, and its track's color (a grey that shows on
 // dark and light themes alike).
-const GLYPHS = { clear: "☀", cloudy: "☁", showers: "☂", storm: "↯", compact: "⚠" };
+const GLYPHS = { clear: "☀", cloudy: "☁", showers: "☂", storm: "☇", compact: "↯" };
 const EIGHTHS = "▁▂▃▄▅▆▇█", LEFT_EIGHTHS = " ▏▎▍▌▋▊▉█";
 const TEXT_GAUGE = 10, TEXT_TRACK = "#5f6368";
 const WEATHER_COLORS = { clear: "#e0b000", cloudy: "#8ea3b8", showers: "#2f68c0", storm: "#b04fc0", compact: "#d64545" };
