@@ -37,10 +37,10 @@ function withUsage(on: any, tokens: number | (() => number), rateLimits: unknown
   });
 }
 
-// Texts on the band (not in the hover cards: their lines in the theme's "text" color, their legends) and Svg alts.
+// Texts on the band (not in the hover cards: their lines in the theme's "text" color) and Svg alts.
 async function band($: any, surface: "terminal" | "desktop" = "desktop", columns = 300) {
   const ui = await $.ui.mount({ plugin: "otto-hud", surface, component: "AbovePrompt", props: { bodyColumns: columns } as any });
-  const texts = (await ui.findAll({ type: "Text" })).filter((t: any) => t.props?.color !== "text" && t.text !== "■").map((t: any) => t.text);
+  const texts = (await ui.findAll({ type: "Text" })).filter((t: any) => t.props?.color !== "text").map((t: any) => t.text);
   const alts = (await ui.findAll({ type: "Svg" })).map((s: any) => s.props?.alt);
   return { ui, texts, alts };
 }
@@ -156,7 +156,7 @@ test("the context's composition is in the forecast's tooltip, not on the band, w
   expect(alts.filter((a: string) => a.includes("What covers the sky"))).toHaveLength(1);
   expect(alts.find((a: string) => a.includes("What covers the sky"))).toMatch(/^Cloudy/);
   // The only legends are the gauges': three each.
-  expect((await ui.findAll({ type: "Text" })).filter((t: any) => t.text === "■")).toHaveLength(6);
+  expect((await ui.findAll({ type: "Svg" })).filter((s: any) => s.props?.alt === "")).toHaveLength(6);
 });
 
 test("under a clear sky, nothing covers it: the composition is what you see in it", async ($, on) => {
@@ -430,9 +430,13 @@ test("a gauge's tooltip has its parts' colors as legends: the share used, the ti
   withUsage(on, 600_000);
   await start($);
   const { ui } = await band($);
-  // The 5-hour gauge is calm: green used, Otto's blue for the time, faded green for the pace; then the 7-day one's.
-  const legends = (await ui.findAll({ type: "Text" })).filter((t: any) => t.text === "■").map((t: any) => t.props.color);
-  expect(legends.slice(0, 3)).toEqual(["#3fa66b", "#4a8fe0", "#3fa66b59"]);
+  // The 5-hour gauge is calm: a green square for the share used, the time mark in Otto's blue, a faded green square for
+  // the pace; all in the same box, so the texts line up.
+  const legends = (await ui.findAll({ type: "Svg" })).filter((s: any) => s.props?.alt === "").slice(0, 3).map((s: any) => s.props);
+  expect(legends.map((l: any) => [l.width, l.height])).toEqual([[9, 15], [9, 15], [9, 15]]);
+  expect(legends[0].source).toContain('<rect y="3" width="9" height="9" rx="1.5" fill="#3fa66b"/>');
+  expect(legends[1].source).toContain('<rect x="3.5" width="2" height="15" rx="1" fill="#4a8fe0"/>');
+  expect(legends[2].source).toContain('fill="#3fa66b59"');
 });
 
 test("where the time stands, a gauge has a mark in Otto's blue that goes past its bar above and below", async ($, on) => {

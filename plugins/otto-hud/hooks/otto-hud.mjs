@@ -150,6 +150,8 @@ const FADED = "59";
 const grey = (alpha) => `rgba(128,128,128,${alpha})`;
 // A gauge: its bar, and how far the mark where the time stands goes past it above and below (px).
 const GAUGE = { width: 72, height: 9, overhang: 3 };
+// A tooltip's legend: all the same box, so the lines' texts line up, as tall as a gauge's drawing (within a line).
+const LEGEND = { width: 9, height: GAUGE.height + 2 * GAUGE.overhang };
 
 // ---------- Drawings ----------
 
@@ -455,7 +457,8 @@ function drawLine(elements, columns, now) {
 }
 
 // A tooltip: a string with a line per fact, or an array of lines (empty: a blank line).
-// A line is a string (empty: a blank line) or { text, color }, which has a legend: a swatch of the color.
+// A line is a string (empty: a blank line) or { text, color, mark? }, which has a legend: a square of the color, or
+// with `mark` the gauges' time mark.
 const lines = (tip) => (Array.isArray(tip) ? tip : tip.split("\n"));
 // A tooltip as plain text, for an Svg's alt.
 const plain = (tip) => lines(tip).map((line) => line.text ?? line).join("\n");
@@ -463,7 +466,7 @@ const plain = (tip) => lines(tip).map((line) => line.text ?? line).join("\n");
 // Every block carries its details in a card shown on hover anywhere over it, the band's full height
 // (the line stretches its blocks), laid over the band. Plain images, no interactive frame: the
 // desktop rebuilds the band on every redraw, and frames flash as they reload. A null tip: no card.
-function withTip({ Box, Text }, key, parts, tip, gap = 0, grow = false) {
+function withTip({ Box, Svg, Text }, key, parts, tip, gap = 0, grow = false) {
   const card = tip !== null && Box({
     position: "absolute",
     top: 0,
@@ -476,7 +479,9 @@ function withTip({ Box, Text }, key, parts, tip, gap = 0, grow = false) {
     // One line each, the first the title when there are more.
     children: lines(tip).map((line, i, all) => {
       const text = Text({ color: TIP.text, bold: i === 0 && all.length > 1, wrap: "truncate-end", children: line.text ?? (line || " ") });
-      return line.color ? Box({ flexDirection: "row", columnGap: 1, children: [Text({ color: line.color, children: "■" }), text] }) : text;
+      if (!line.color) return text;
+      const legend = Svg({ key: "legend", source: legendSvg(line.color, line.mark), alt: "", width: LEGEND.width, height: LEGEND.height });
+      return Box({ flexDirection: "row", columnGap: 1, alignItems: "center", children: [legend, text] });
     }),
   });
   return Box({ key, marginLeft: gap, ...(grow ? { flexGrow: 1, flexShrink: 1, minWidth: 0 } : { flexShrink: 0 }), flexDirection: "row", columnGap: 1, alignItems: "center", children: card ? [...parts, card] : parts });
@@ -543,7 +548,7 @@ function gaugeBlock({ Box, Svg, Text }, g, now, rank) {
   const legend = { used: TONES[g.tone], elapsed: OTTO_COLOR, pace: TONES[g.tone] + FADED };
   const tip = g.unknown
     ? `${name}\n${T.tips.unmeasured}`
-    : T.tips.gauge(name, value, g.elapsed === null ? null : Math.round(g.elapsed), pace, left, at).map((line) => (line.mark ? { text: line.text, color: legend[line.mark] } : line));
+    : T.tips.gauge(name, value, g.elapsed === null ? null : Math.round(g.elapsed), pace, left, at).map((line) => (line.mark ? { text: line.text, color: legend[line.mark], mark: line.mark === "elapsed" } : line));
   // Only the bar is colored, and the value turns red on alert: the label keeps the theme's color.
   const valueText = Text({ key: "v", bold: true, children: value, ...(g.tone === "alert" && { color: "red" }) });
   const labelText = Text({ key: "l", dimColor: true, children: label });
@@ -679,6 +684,16 @@ function barSvg(height, body, marks = []) {
     `<svg y="${over}" width="100%" height="${height}"><defs><clipPath id="${ends}"><rect width="100%" height="${height}" rx="${height / 2}"/></clipPath></defs>` +
     `<g clip-path="url(#${ends})">${span(0, 100, grey(0.2))}${body}</g></svg>${lines}</svg>`
   );
+}
+
+// A legend in a tooltip: a square as tall as a gauge's bar, or (mark) its time mark, 2 px wide and as tall as the
+// gauge's drawing, both centered in the same box.
+function legendSvg(color, mark) {
+  const { width, height } = LEGEND;
+  const shape = mark
+    ? `<rect x="${(width - 2) / 2}" width="2" height="${height}" rx="1" fill="${color}"/>`
+    : `<rect y="${GAUGE.overhang}" width="${width}" height="${GAUGE.height}" rx="1.5" fill="${color}"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">${shape}</svg>`;
 }
 
 // A full-height slice of a bar, from x0 to x1 %.
