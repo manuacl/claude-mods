@@ -754,6 +754,9 @@ export const MOODS = {
 // The size Otto is drawn at in the band, in px.
 export const OTTO = { width: W / 2, height: H / 2 };
 
+// Otto's blue, for what the band marks in his color.
+export const OTTO_COLOR = C.body;
+
 // How long each mood plays before a reaction moves on (ms): its start and about a loop of it.
 export const PLAY_MS = {
   idle: 3000, lookaround: 5400, bubbles: 3500, settle: 4500, twirl: 3600,

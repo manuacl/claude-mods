@@ -21,7 +21,7 @@
 // The host reads on(...) and $.noun.method(...) from source, so they are spelled literally, and
 // helpers that take $ are top-level functions.
 
-import { HOLD_MS, OTTO, PLAY_MS, ottoSvg } from "./otto.mjs";
+import { HOLD_MS, OTTO, OTTO_COLOR, PLAY_MS, ottoSvg } from "./otto.mjs";
 import { WEATHER } from "./weather.mjs";
 
 // ---------- Texts ----------
@@ -141,7 +141,8 @@ const PACE = { settle: 10, alert: 130, used: 90 };
 const LIMITS_KEY = "rateLimits";
 const TONES = { calm: "#3fa66b", fast: "#d9962b", alert: "#d64545" };
 const grey = (alpha) => `rgba(128,128,128,${alpha})`;
-const GAUGE = { width: 72, height: 9 };
+// A gauge: its bar, and how far the mark where the time stands goes past it above and below (px).
+const GAUGE = { width: 72, height: 9, overhang: 3 };
 
 // ---------- Drawings ----------
 
@@ -533,7 +534,7 @@ function gaugeBlock({ Box, Svg, Text }, g, now, rank) {
   const labelText = Text({ key: "l", dimColor: true, children: label });
   // The bar flexes: its box takes the room left, and the drawing fills its box. In text it is drawn at the cells
   // drawLine gives it.
-  const svgBar = () => Box({ key: "bar", flexGrow: 1, flexShrink: 1, minWidth: 0, children: [Svg({ key: "svg", source: gaugeSvg(g), alt: tip, height: GAUGE.height })] });
+  const svgBar = () => Box({ key: "bar", flexGrow: 1, flexShrink: 1, minWidth: 0, children: [Svg({ key: "svg", source: gaugeSvg(g), alt: tip, height: GAUGE.height + 2 * GAUGE.overhang })] });
   const textBar = (n) => Box({ key: "bar", flexShrink: 0, children: textRuns(Text, gaugeText(g, n)) });
   const cells = label.length + 1 + (Svg ? Math.ceil(GAUGE.width / 8) : TEXT_GAUGE) + 1 + value.length;
   // Only the bar gives: its label and value keep their room, on one line.
@@ -643,7 +644,7 @@ function turnsSvg(deltas) {
 }
 
 // A limit: solid up to the share used, faded on up to the share projected by the reset (to the end
-// when the pace runs past the limit), and cut by a notch where the time stands.
+// when the pace runs past the limit), and marked in Otto's blue where the time stands.
 function gaugeSvg(g) {
   const color = TONES[g.tone];
   const body = span(0, clamp(g.projected ?? 0), color + "59") + span(0, clamp(g.used), color);
@@ -651,18 +652,17 @@ function gaugeSvg(g) {
 }
 
 // A bar with round ends as wide as its box (no viewBox: positions in %, the ends' radius in px): a
-// grey track, `body` on it, and 2 px see-through notches at `notches` %, so the band's own
-// background marks them in any theme. Ids carry what tells the drawings apart, in case a page
-// holds several.
-function barSvg(height, body, notches = []) {
+// grey track and `body` on it, and over it 2 px marks at `marks` %, in Otto's blue, that go past
+// the bar by GAUGE.overhang above and below. Ids carry what tells the drawings apart, in case a
+// page holds several.
+function barSvg(height, body, marks = []) {
   const ends = `ends${height}`;
-  const cut = `cut${height}at${notches.map((n) => Math.round(n * 10)).join("-")}`;
-  const holes = notches.map((n) => `<rect x="${n.toFixed(1)}%" width="2" height="${height}" transform="translate(-1 0)" fill="black"/>`).join("");
-  const mask = notches.length > 0 ? `<mask id="${cut}"><rect width="100%" height="${height}" fill="white"/>${holes}</mask>` : "";
+  const over = GAUGE.overhang, full = height + 2 * over;
+  const lines = marks.map((n) => `<rect x="${n.toFixed(1)}%" width="2" height="${full}" rx="1" transform="translate(-1 0)" fill="${OTTO_COLOR}"/>`).join("");
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="${height}">` +
-    `<defs><clipPath id="${ends}"><rect width="100%" height="${height}" rx="${height / 2}"/></clipPath>${mask}</defs>` +
-    `<g clip-path="url(#${ends})"${mask ? ` mask="url(#${cut})"` : ""}>${span(0, 100, grey(0.2))}${body}</g></svg>`
+    `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="${full}">` +
+    `<svg y="${over}" width="100%" height="${height}"><defs><clipPath id="${ends}"><rect width="100%" height="${height}" rx="${height / 2}"/></clipPath></defs>` +
+    `<g clip-path="url(#${ends})">${span(0, 100, grey(0.2))}${body}</g></svg>${lines}</svg>`
   );
 }
 

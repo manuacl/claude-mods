@@ -424,6 +424,18 @@ test("the bars flex into the room the band leaves, their labels and values fixed
   expect(texts).toEqual(["60%", "—", "5h", "32%", "7d", "59%"]);
 });
 
+test("where the time stands, a gauge has a mark in Otto's blue that goes past its bar above and below", async ($, on) => {
+  world(on);
+  withUsage(on, 600_000);
+  await start($);
+  const svg = (await (await band($)).ui.findAll({ type: "Svg" })).find((s: any) => s.props?.alt?.startsWith("5-hour")).props;
+  // The bar is 9 px tall, the drawing 3 px more above and below; the mark at 40% (the time elapsed) runs its full height.
+  expect(svg.height).toBe(15);
+  expect(svg.source).toContain('<svg y="3" width="100%" height="9">');
+  expect(svg.source).toContain('<rect x="40.0%" width="2" height="15" rx="1" transform="translate(-1 0)" fill="#4a8fe0"/>');
+  expect(svg.source).not.toContain("<mask");
+});
+
 test("the weather icon is tinted and its animation follows the clock across redraws", async ($, on) => {
   const clock = world(on);
   withUsage(on, 600_000);
