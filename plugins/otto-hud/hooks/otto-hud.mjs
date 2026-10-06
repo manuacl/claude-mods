@@ -480,7 +480,8 @@ function withTip({ Box, Svg, Text }, key, parts, tip, gap = 0, grow = false) {
     children: lines(tip).map((line, i, all) => {
       const text = Text({ color: TIP.text, bold: i === 0 && all.length > 1, wrap: "truncate-end", children: line.text ?? (line || " ") });
       if (!line.color) return text;
-      const legend = Svg({ key: "legend", source: legendSvg(line.color, line.mark), alt: "", width: LEGEND.width, height: LEGEND.height });
+      // The desktop drops an Svg whose alt is empty (the test kit takes it): the shape it draws, as a glyph.
+      const legend = Svg({ key: "legend", source: legendSvg(line.color, line.mark), alt: line.mark ? "│" : "■", width: LEGEND.width, height: LEGEND.height });
       return Box({ flexDirection: "row", columnGap: 1, alignItems: "center", children: [legend, text] });
     }),
   });
