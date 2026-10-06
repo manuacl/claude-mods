@@ -80,6 +80,7 @@ Learned the hard way; they shape the code:
   - An animation must live inside one SVG (SMIL `<animate>`), never in redraws at a frame rate.
   - A redraw restarts SMIL: `ottoSvg` shifts every `begin` by the time elapsed since the mood began, so the animation carries on.
   - No `isInteractive` Svg: those are sandboxed iframes that flash as they reload. Tooltips are hover cards instead (`withTip`: a `display: "none"` Box shown with `hover: { display: "flex" }` inside the block's keyed Box, so hovering anywhere over the block shows it; the card itself must not be keyed).
+  - The desktop lifts such a card (no hover `scope`) into a popover anchored to the nearest keyed Box, which is also its hover zone: at that Box's left edge, above it (below if no room), pulled left only to stay within the window. It drops the card's `position`, offsets, `width`, margins, padding, border and background and paints its own chrome, so a mod cannot anchor a card elsewhere (`right`, a negative `left` or a frame all fail); a frame inside the card draws a second background.
 - An Svg `source` is at most 131072 characters; the busiest mood is about 25k.
 - Box offsets and margins are whole cells: Otto is not lifted (his picture holds his head room); finer moves have to happen in the SVG itself.
 - A desktop column is 8 CSS px: `cells = Math.ceil(px / 8)` when sizing blocks.
