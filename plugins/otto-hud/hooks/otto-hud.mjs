@@ -179,6 +179,10 @@ const pick = (list) => list[Math.floor(Math.random() * list.length)];
 // so a reload of the mod (an edit, an update) goes on with the same history.
 let readings = [];
 const READINGS = { plugin: "otto-hud", key: "readings" };
+// The context as the last response left it, between readings ({ tokens, window, percent } or null): what
+// session.measure reports after each response, for the forecast and its percent to follow it live. Not a reading, so
+// the prompts' bars only move at the end of a turn.
+let live = null;
 // The latest breakdown: { categories } or null.
 let breakdown = null;
 // The account's limits as last measured: { at (ms), list: SessionRateLimit[] }.
@@ -267,6 +271,9 @@ export function register(on, options) {
 
   on("session.measure", async ($, e, next) => {
     if (e.changed.includes("rateLimits") && e.rateLimits.length) await syncLimits($, e.rateLimits);
+    // The figures come with the event: nothing to ask, no token spent.
+    const c = e.context;
+    if (e.changed.includes("context") && c.tokens > 0) live = { tokens: c.tokens, window: c.window, percent: Math.round(c.percent ?? (c.tokens / c.window) * 100) };
     $.ui.invalidate("ui.render");
     return next(e);
   });
@@ -305,6 +312,7 @@ async function takeReading($, isTurn = true) {
       // The session.start reading is 0 before any response; drop it once real readings arrive.
       const kept = isTurn ? readings : readings.slice(0, -1);
       readings = [...kept.filter((r) => r.tokens > 0), { tokens, window: context.window, percent, threshold }].slice(-HISTORY);
+      live = null;
       await $.state.set(READINGS, readings);
       breakdown = context.breakdown ? { categories: context.breakdown.categories ?? [] } : null;
     }
@@ -339,9 +347,16 @@ function forecastFor(percent) {
   return FORECAST.find((band) => percent < band.upTo) ?? FORECAST[FORECAST.length - 1];
 }
 
-// The forecast for the latest reading, or null before any.
+// The latest reading, with the context as the last response left it (live), or null before any reading: the
+// threshold stays the reading's, session.measure has none.
+function current() {
+  const r = readings.at(-1);
+  return r && live ? { ...r, ...live } : (r ?? null);
+}
+
+// The forecast for the context now, or null before any reading.
 function forecastNow() {
-  const cur = readings.at(-1);
+  const cur = current();
   return cur ? forecastFor(weatherPercent(cur)) : null;
 }
 
@@ -413,7 +428,7 @@ function clamp(percent) {
 // (the terminal) there is no Otto, and no card: the band is one row there, which would cut a card to its first line.
 function drawLine(elements, columns, now) {
   const { Box, Svg } = elements;
-  const cur = readings.at(-1);
+  const cur = current();
   const blocks = cur ? [weatherBlock(elements, forecastNow(), cur, breakdown?.categories ?? [], now)] : [];
   if (cur) blocks.push(turnsBlock(elements));
   // In line order.
