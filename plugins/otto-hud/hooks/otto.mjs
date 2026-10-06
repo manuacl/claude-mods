@@ -5,7 +5,19 @@
 // at 49×35 in the band. Every mood starts from the rest pose (idle at its start), so a change of mood never jumps;
 // what plays once (a start) then hands over to loops, or, for the rest moods in ONCE, comes back to the rest pose.
 
-const C = { body: "#4a8fe0", line: "#1f4a8a", eye: "#fff", pupil: "#17233b", cheek: "#ff8fb0", ink: "#1d2433" };
+// Otto's colors: his body, his outline, the whites of his eyes, his pupils and mouth, his cheeks, the shine on his
+// head and in his eyes, his suckers. The ink is his cloud's, and the crow's.
+const C = {
+  body: "#4a8fe0",
+  line: "#1f4a8a",
+  eye: "#fff",
+  pupil: "#17233b",
+  cheek: "#ff8fb0",
+  highlight: "#fff",
+  glint: "#fff",
+  sucker: "#8fbcf0",
+  ink: "#1d2433",
+};
 const W = 98, H = 70, X = 40, LEFT = X - 46; // X: the body's center, the anchor of every mood; LEFT just left of the widest pose (desktop's), what flies in aside
 const FLOOR = 62, GROUND = 56, SCALE = 1.2; // the body is drawn in its own units, its GROUND set on the canvas' FLOOR
 
@@ -47,7 +59,7 @@ const TENTACLES = [
 ];
 
 const HEAD = `M${X - 18} 30 Q${X - 18} 19 ${X - 7} 19 H${X + 7} Q${X + 18} 19 ${X + 18} 30 V39 Q${X + 18} 43 ${X + 14} 43 H${X - 14} Q${X - 18} 43 ${X - 18} 39Z`;
-const HIGHLIGHT = `<rect x="${X - 11}" y="22" width="7" height="3" rx="1.5" fill="#fff" opacity=".35"/>`;
+const HIGHLIGHT = `<rect x="${X - 11}" y="22" width="7" height="3" rx="1.5" fill="${C.highlight}" opacity=".35"/>`;
 // Each tentacle outlined, but no line between them and the head: the head's outline goes under them, its fill over their roots.
 // wrapHead moves the head alone (its outline and its fill), wrapLegs the tentacles, wrapLeg one of them by its index.
 const body = (skip = [], { wrapHead = (s) => s, wrapLegs = (s) => s, wrapLeg = (i, s) => s } = {}) => {
@@ -68,7 +80,7 @@ function eyes({ look = [0, 0], roam = "", closed = "", spiral = false, droop = f
     }
     const pupil = spiral
       ? `<g transform="translate(${x} 30)"><path d="M0 0 m-.6 0 a.6 .6 0 1 1 1.2 0 a1.4 1.4 0 1 1 -2.4 .3 a2.2 2.2 0 1 1 3.4 -.8" fill="none" stroke="${C.pupil}" stroke-width=".9">${turn("0;360", 1.2)}</path></g>`
-      : `<g>${roam}<rect x="${x + look[0] - 1.7}" y="${28 + look[1]}" width="3.4" height="4" rx=".6" fill="${C.pupil}"/><rect x="${x + look[0]}" y="${28.5 + look[1]}" width="1" height="1" fill="#fff"/></g>`;
+      : `<g>${roam}<rect x="${x + look[0] - 1.7}" y="${28 + look[1]}" width="3.4" height="4" rx=".6" fill="${C.pupil}"/><rect x="${x + look[0]}" y="${28.5 + look[1]}" width="1" height="1" fill="${C.glint}"/></g>`;
     const blink = spiral ? "" : `<animateTransform attributeName="transform" type="scale" values="1 1;1 1;1 .1;1 1" keyTimes="0;.93;.96;1" dur="4.5s" ${loop}/>`;
     const [outer, inner] = [x + 3.7 * side, x - 3.7 * side];
     const lid = droop
@@ -290,7 +302,7 @@ export const MOODS = {
     const side =
       `<g opacity="0">${track("opacity", [[0, 0], [ARMS[0][1] - 0.05, 0], [ARMS[0][1], 1], [OUT, 1], [OUT + 0.05, 0], [D, 0]])}<g transform="translate(${px} ${py})">` +
       `<g>${track("", knocks("1 1", "1.4 1.15"), "scale")}<rect x="-2.9" y="-9.1" width="5.8" height="15.5" rx="2.9" fill="${C.body}" stroke="${C.line}" stroke-width="1.1"/>` +
-      [-6.7, -4, -1.3, 1.4, 4.1].map((y) => `<circle cy="${y}" r=".95" fill="#8fbcf0" stroke="${C.line}" stroke-width=".5"/>`).join("") + `</g>` +
+      [-6.7, -4, -1.3, 1.4, 4.1].map((y) => `<circle cy="${y}" r=".95" fill="${C.sucker}" stroke="${C.line}" stroke-width=".5"/>`).join("") + `</g>` +
       `<g opacity="0">${track("opacity", knocks(0, 1))}<path d="M6 -5.5 l2.4 -1.4 M6.6 0 h2.8 M6 5.5 l2.4 1.4" stroke="${C.line}" stroke-width="1.1" stroke-linecap="round"/></g></g></g>`;
     // Her head tilts a little to her own right (our left) as she knocks, and straightens a little at each knock; the
     // knocking tentacle stays where it is.
@@ -413,7 +425,7 @@ export const MOODS = {
         ? `<g opacity="0"><animate attributeName="opacity" values="0;1" dur=".25s" begin="${T.look}s" fill="freeze"/><g transform="translate(${lx} ${ly}) scale(${K.toFixed(3)})"><g>
             <animateTransform attributeName="transform" type="scale" values="1 1;1 1;1 .1;1 1" keyTimes="0;.93;.96;1" dur="4.5s" ${loop}/>
             <rect x="-4.2" y="-4.8" width="8.4" height="9.6" rx="2.4" fill="${C.eye}"/>
-            <g>${move("0 0;.9 .3;0 0;-1.5 -.45;0 0", 3.2, `begin="${T.search}s" ${spline(4)}`)}<rect x="-1.2" y="-1" width="4.4" height="5.2" rx="1" fill="${C.pupil}"/><rect x="1.4" y="-.4" width="1.4" height="1.4" fill="#fff"/></g></g></g></g>`
+            <g>${move("0 0;.9 .3;0 0;-1.5 -.45;0 0", 3.2, `begin="${T.search}s" ${spline(4)}`)}<rect x="-1.2" y="-1" width="4.4" height="5.2" rx="1" fill="${C.pupil}"/><rect x="1.4" y="-.4" width="1.4" height="1.4" fill="${C.glint}"/></g></g></g></g>`
         : "") +
       `<path transform="translate(${lx} ${ly}) scale(${K.toFixed(3)})" d="M-4.6 -1.2 q.5 -2.8 3.4 -3.6" fill="none" stroke="#fff" stroke-width="1" stroke-linecap="round" opacity=".9"/>`;
     // At her eye she holds it by the side, the handle out past her right: turned SIDE degrees from how it comes out.
