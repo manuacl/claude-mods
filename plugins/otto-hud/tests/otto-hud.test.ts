@@ -75,13 +75,28 @@ test("desktop: icons with tooltips for the forecast, context and limits", async 
   expect(texts.indexOf("5h")).toBeLessThan(texts.indexOf("7d"));
 });
 
-test("the terminal draws nothing", async ($, on) => {
+test("the terminal draws the line in text, without Otto or tooltips", async ($, on) => {
   world(on);
   withUsage(on, 600_000);
   await start($);
-  const { texts, alts } = await band($, "terminal");
+  // The line takes 59 cells with its bars at their least, 10 cells.
+  const { ui, texts, alts } = await band($, "terminal", 59);
   expect(alts).toEqual([]);
-  expect(texts).toEqual([]);
+  // Showers at 67% of the way to compaction; no prompt measured yet; the 5-hour limit 32% used (3 cells and a
+  // quarter of 10), 80% by the reset: solid, faded, the track, all full cells.
+  for (const t of ["☂", "60%", "▁▁▁▁▁▁▁▁", "—", "5h", "███", "▎", "████", "██", "32%"]) expect(texts).toContain(t);
+  // The quarter cell's other three quarters are the faded color that follows it, not the terminal's background.
+  const quarter = (await ui.findAll({ type: "Text" })).find((t: any) => t.text === "▎").props;
+  expect(quarter.backgroundColor).toMatch(/^#[0-9a-f]{6}$/);
+  expect(quarter.backgroundColor).not.toBe(quarter.color);
+  expect((await ui.findAll({ type: "Text" })).some((t: any) => t.props?.color === "text")).toBe(false);
+  // What it draws, with the gaps between its blocks (3) and their parts (1) and its padding, fits.
+  const drawn = (t: string[]) => t.join("").length + 3 * 3 + 6 + 1;
+  expect(drawn(texts)).toBe(59);
+  // 16 cells wider, each bar takes 8 of them: 32% of 18 cells is 5 and three quarters.
+  const wider = (await band($, "terminal", 75)).texts;
+  for (const t of ["█████", "▊", "████████", "████"]) expect(wider).toContain(t);
+  expect(drawn(wider)).toBe(drawn(texts) + 16);
 });
 
 test("a narrow band drops the least important blocks first", async ($, on) => {
@@ -140,7 +155,8 @@ test("the context's composition is in the forecast's tooltip, not on the band, w
   const { ui, alts } = await band($);
   expect(alts.filter((a: string) => a.includes("What covers the sky"))).toHaveLength(1);
   expect(alts.find((a: string) => a.includes("What covers the sky"))).toMatch(/^Cloudy/);
-  expect((await ui.findAll({ type: "Text" })).filter((t: any) => t.text === "■")).toHaveLength(0);
+  // The only legends are the gauges': three each.
+  expect((await ui.findAll({ type: "Svg" })).filter((s: any) => ["■", "│"].includes(s.props?.alt))).toHaveLength(6);
 });
 
 test("under a clear sky, nothing covers it: the composition is what you see in it", async ($, on) => {
@@ -407,6 +423,34 @@ test("the bars flex into the room the band leaves, their labels and values fixed
   // The other blocks, and a gauge's label and value, keep their size: nothing wraps or overlaps.
   for (const key of ["weather", "turns", "label", "value"]) expect(boxes.find((b: any) => b.props?.key === key)?.props.flexShrink).toBe(0);
   expect(texts).toEqual(["60%", "—", "5h", "32%", "7d", "59%"]);
+});
+
+test("a gauge's tooltip has its parts' colors as legends: the share used, the time elapsed, the pace", async ($, on) => {
+  world(on);
+  withUsage(on, 600_000);
+  await start($);
+  const { ui, alts } = await band($);
+  // The desktop drops an Svg with an empty alt: none has one.
+  expect(alts.every((a: string) => a.trim() !== "")).toBe(true);
+  // The 5-hour gauge is calm: a green square for the share used, the time mark in Otto's blue, a faded green square for
+  // the pace; all in the same box, so the texts line up.
+  const legends = (await ui.findAll({ type: "Svg" })).filter((s: any) => ["■", "│"].includes(s.props?.alt)).slice(0, 3).map((s: any) => s.props);
+  expect(legends.map((l: any) => [l.width, l.height])).toEqual([[9, 15], [9, 15], [9, 15]]);
+  expect(legends[0].source).toContain('<rect y="3" width="9" height="9" rx="1.5" fill="#3fa66b"/>');
+  expect(legends[1].source).toContain('<rect x="3.5" width="2" height="15" rx="1" fill="#4a8fe0"/>');
+  expect(legends[2].source).toContain('fill="#3fa66b59"');
+});
+
+test("where the time stands, a gauge has a mark in Otto's blue that goes past its bar above and below", async ($, on) => {
+  world(on);
+  withUsage(on, 600_000);
+  await start($);
+  const svg = (await (await band($)).ui.findAll({ type: "Svg" })).find((s: any) => s.props?.alt?.startsWith("5-hour")).props;
+  // The bar is 9 px tall, the drawing 3 px more above and below; the mark at 40% (the time elapsed) runs its full height.
+  expect(svg.height).toBe(15);
+  expect(svg.source).toContain('<svg y="3" width="100%" height="9">');
+  expect(svg.source).toContain('<rect x="40.0%" width="2" height="15" rx="1" transform="translate(-1 0)" fill="#4a8fe0"/>');
+  expect(svg.source).not.toContain("<mask");
 });
 
 test("the weather icon is tinted and its animation follows the clock across redraws", async ($, on) => {

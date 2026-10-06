@@ -7,7 +7,7 @@ Version 2.0.
 otto-hud is a fork of the Token Weather example mod
 (https://github.com/anthropics/claude-code-playground, claude-code/mods/token-weather),
 Copyright 2026 Anthropic PBC, licensed under the Apache License, Version 2.0.
-Changes: Otto, an animated octopus of our own, desktop only, forecast scaled to the auto-compact point, context make-up
+Changes: Otto, an animated octopus of our own (desktop only; the terminal gets the line in text), forecast scaled to the auto-compact point, context make-up
 by category, account limits with a pace projection, English and French labels.
 
 The weather icons in plugins/otto-hud/hooks/weather.mjs are Meteocons by Bas Milius

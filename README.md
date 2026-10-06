@@ -4,7 +4,7 @@ Personal [Claude Code mods](https://code.claude.com/docs/en/plugins). Needs Clau
 
 | Mod | What it does |
 | --- | --- |
-| [`otto-hud`](plugins/otto-hud) | Otto, a blue octopus, forecasts your context window above the prompt, in the Claude Code desktop app for now. |
+| [`otto-hud`](plugins/otto-hud) | Otto, a blue octopus, forecasts your context window above the prompt, in the Claude Code desktop app; the terminal gets the same line in text. |
 
 ```sh
 claude plugin marketplace add manuacl/claude-mods
