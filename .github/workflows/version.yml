@@ -1,0 +1,94 @@
+name: Bump version
+
+# On a merge to main, the PR's bump:patch / bump:minor / bump:major label bumps every plugin the
+# PR changed: its plugin.json version, one commit, one {name}--v{version} tag per plugin (the
+# format of `claude plugin tag`). No label, no bump. The new version is what installs and
+# `claude plugin update` see, so this is the release: there is nothing else to deploy.
+#
+# This job can write to main: no npm install and no dependency runs in it, only git, gh and the
+# repo's own Node script.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          # The release commit and tags are pushed with this token. main is protected (pull requests
+          # only) and a personal repository cannot let Actions bypass that, so BUMP_TOKEN, a
+          # fine-grained token of the repository's admin with Contents: read and write, pushes in its
+          # name; without it, the push of the release is refused.
+          token: ${{ secrets.BUMP_TOKEN || secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Skip if HEAD already tagged
+        id: check
+        run: |
+          if [ -n "$(git tag --points-at HEAD)" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve bump type from the merged PR's label
+        if: steps.check.outputs.skip == 'false'
+        id: bump
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          # The commit-to-PR association, not `gh pr list`, which sorts by creation date and can
+          # miss a long-lived PR.
+          PR=$(gh api "repos/{owner}/{repo}/commits/$COMMIT_SHA/pulls" --jq '.[0].number // ""')
+          TYPE=
+          if [ -n "$PR" ]; then
+            LABELS=$(gh pr view "$PR" --json labels --jq '[.labels[].name] | join(",")')
+            if echo "$LABELS" | grep -q "bump:major"; then TYPE=major
+            elif echo "$LABELS" | grep -q "bump:minor"; then TYPE=minor
+            elif echo "$LABELS" | grep -q "bump:patch"; then TYPE=patch
+            fi
+          fi
+          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
+          if [ -z "$TYPE" ]; then
+            echo "No bump:* label on PR #$PR: no version bump."
+          else
+            echo "Bump type: $TYPE (PR #$PR)"
+          fi
+
+      - name: Bump, commit and tag the changed plugins
+        if: steps.check.outputs.skip == 'false' && steps.bump.outputs.type != ''
+        env:
+          BUMP_TYPE: ${{ steps.bump.outputs.type }}
+        run: |
+          # The plugins this merge changed: HEAD^ is main before it (first parent, squash or merge).
+          PLUGINS=$(git diff --name-only HEAD^ HEAD | sed -n 's|^plugins/\([^/]*\)/.*|\1|p' | sort -u)
+          if [ -z "$PLUGINS" ]; then
+            echo "The PR changed no plugin: nothing to bump."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAGS=
+          for NAME in $PLUGINS; do
+            VERSION=$(node scripts/bump-version.mjs "$NAME" "$BUMP_TYPE")
+            git add "plugins/$NAME/.claude-plugin/plugin.json"
+            TAGS="$TAGS $NAME--v$VERSION"
+          done
+          git commit --no-verify -m "Release$TAGS"
+          for TAG in $TAGS; do
+            git tag -a "$TAG" -m "$TAG"
+          done
+          git push origin HEAD:main --no-verify
+          git push origin $TAGS --no-verify

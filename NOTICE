@@ -1,0 +1,15 @@
+claude-mods
+
+Otto, the octopus in plugins/otto-hud/hooks/otto.mjs, is not licensed under the Apache License: Copyright 2026 Manuel
+Chamorro, all rights reserved, see plugins/otto-hud/OTTO-LICENSE. The rest of claude-mods is under the Apache License,
+Version 2.0.
+
+otto-hud is a fork of the Token Weather example mod
+(https://github.com/anthropics/claude-code-playground, claude-code/mods/token-weather),
+Copyright 2026 Anthropic PBC, licensed under the Apache License, Version 2.0.
+Changes: Otto, an animated octopus of our own, desktop only, forecast scaled to the auto-compact point, context make-up
+by category, account limits with a pace projection, English and French labels.
+
+The weather icons in plugins/otto-hud/hooks/weather.mjs are Meteocons by Bas Milius
+(https://github.com/basmilius/meteocons), Copyright (c) 2020-present Bas Milius, licensed under
+the MIT License. Changes: whitespace removed, viewBox cropped, recolored when drawn.

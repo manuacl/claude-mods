@@ -1,0 +1,12 @@
+{
+  "name": "claude-mods",
+  "owner": { "name": "Manuel" },
+  "metadata": { "description": "Personal Claude Code mods." },
+  "plugins": [
+    {
+      "name": "otto-hud",
+      "source": "./plugins/otto-hud",
+      "description": "Otto, a blue octopus, forecasts your context window above the prompt: weather scaled to auto-compact, what fills the context, and your 5-hour and 7-day limits with a pace projection."
+    }
+  ]
+}

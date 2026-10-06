@@ -1,0 +1,14 @@
+Otto - Copyright 2026 Manuel Chamorro. All rights reserved.
+
+"Otto" is the blue octopus character of otto-hud: his drawings and animations in hooks/otto.mjs, his picture in
+.claude-plugin/icon.png, and any other picture of him made from them. Otto is not licensed under the Apache License
+that covers the rest of otto-hud.
+
+You may install, run and use otto-hud, Otto included, as it is published. You may copy and redistribute the
+unmodified hooks/otto.mjs and icon only as part of otto-hud, for instance through a Claude Code plugin marketplace or
+directory, with this notice.
+
+No other right is granted. In particular you may not modify Otto, make derivative works of him, or use him, his
+drawings or his name in anything other than otto-hud, without written permission.
+
+Otto is provided "as is", without warranty of any kind.
