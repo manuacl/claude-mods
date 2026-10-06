@@ -37,10 +37,10 @@ function withUsage(on: any, tokens: number | (() => number), rateLimits: unknown
   });
 }
 
-// Texts on the band (not in the hover cards: their lines in the theme's "text" color) and Svg alts.
+// Texts on the band (not in the hover cards: their lines in the theme's "text" color, their legends) and Svg alts.
 async function band($: any, surface: "terminal" | "desktop" = "desktop", columns = 300) {
   const ui = await $.ui.mount({ plugin: "otto-hud", surface, component: "AbovePrompt", props: { bodyColumns: columns } as any });
-  const texts = (await ui.findAll({ type: "Text" })).filter((t: any) => t.props?.color !== "text").map((t: any) => t.text);
+  const texts = (await ui.findAll({ type: "Text" })).filter((t: any) => t.props?.color !== "text" && t.text !== "■").map((t: any) => t.text);
   const alts = (await ui.findAll({ type: "Svg" })).map((s: any) => s.props?.alt);
   return { ui, texts, alts };
 }
@@ -155,7 +155,8 @@ test("the context's composition is in the forecast's tooltip, not on the band, w
   const { ui, alts } = await band($);
   expect(alts.filter((a: string) => a.includes("What covers the sky"))).toHaveLength(1);
   expect(alts.find((a: string) => a.includes("What covers the sky"))).toMatch(/^Cloudy/);
-  expect((await ui.findAll({ type: "Text" })).filter((t: any) => t.text === "■")).toHaveLength(0);
+  // The only legends are the gauges': three each.
+  expect((await ui.findAll({ type: "Text" })).filter((t: any) => t.text === "■")).toHaveLength(6);
 });
 
 test("under a clear sky, nothing covers it: the composition is what you see in it", async ($, on) => {
@@ -422,6 +423,16 @@ test("the bars flex into the room the band leaves, their labels and values fixed
   // The other blocks, and a gauge's label and value, keep their size: nothing wraps or overlaps.
   for (const key of ["weather", "turns", "label", "value"]) expect(boxes.find((b: any) => b.props?.key === key)?.props.flexShrink).toBe(0);
   expect(texts).toEqual(["60%", "—", "5h", "32%", "7d", "59%"]);
+});
+
+test("a gauge's tooltip has its parts' colors as legends: the share used, the time elapsed, the pace", async ($, on) => {
+  world(on);
+  withUsage(on, 600_000);
+  await start($);
+  const { ui } = await band($);
+  // The 5-hour gauge is calm: green used, Otto's blue for the time, faded green for the pace; then the 7-day one's.
+  const legends = (await ui.findAll({ type: "Text" })).filter((t: any) => t.text === "■").map((t: any) => t.props.color);
+  expect(legends.slice(0, 3)).toEqual(["#3fa66b", "#4a8fe0", "#3fa66b59"]);
 });
 
 test("where the time stands, a gauge has a mark in Otto's blue that goes past its bar above and below", async ($, on) => {

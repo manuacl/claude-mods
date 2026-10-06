@@ -58,11 +58,14 @@ const TEXT = {
       unmeasured: "Not measured yet",
       turns: (list) => `Tokens added by each recent prompt\n${list || "None measured yet"}`,
       stack: (clear) => (clear ? "What you see in the sky" : "What covers the sky"),
-      gauge: (name, used, elapsed, pace, left, at) =>
-        `${name}\n${used} used` +
-        (elapsed === null ? "" : `\n${elapsed}% of the time elapsed`) +
-        (pace?.hit ? `\n100% in ${pace.hit} at this pace` : pace ? `\n${pace.end} by the reset at this pace` : "") +
-        (left ? `\nResets in ${left} at ${at}` : ""),
+      // The lines a part of the gauge stands for say which (mark), for their legend.
+      gauge: (name, used, elapsed, pace, left, at) => [
+        name,
+        { mark: "used", text: `${used} used` },
+        elapsed !== null && { mark: "elapsed", text: `${elapsed}% of the time elapsed` },
+        pace && { mark: "pace", text: pace.hit ? `100% in ${pace.hit} at this pace` : `${pace.end} by the reset at this pace` },
+        left && `Resets in ${left} at ${at}`,
+      ].filter(Boolean),
     },
   },
   fr: {
@@ -100,11 +103,13 @@ const TEXT = {
       unmeasured: "Pas encore mesurée",
       turns: (list) => `Tokens ajoutés par chaque prompt récent\n${list || "Aucun mesuré pour l'instant"}`,
       stack: (clear) => (clear ? "Ce qu'on voit dans le ciel" : "Ce qui couvre le ciel"),
-      gauge: (name, used, elapsed, pace, left, at) =>
-        `${name}\n${used} utilisés` +
-        (elapsed === null ? "" : `\n${elapsed}% du temps écoulé`) +
-        (pace?.hit ? `\n100% dans ${pace.hit} à ce rythme` : pace ? `\n${pace.end} à la remise à zéro à ce rythme` : "") +
-        (left ? `\nRemise à zéro dans ${left} à ${at}` : ""),
+      gauge: (name, used, elapsed, pace, left, at) => [
+        name,
+        { mark: "used", text: `${used} utilisés` },
+        elapsed !== null && { mark: "elapsed", text: `${elapsed}% du temps écoulé` },
+        pace && { mark: "pace", text: pace.hit ? `100% dans ${pace.hit} à ce rythme` : `${pace.end} à la remise à zéro à ce rythme` },
+        left && `Remise à zéro dans ${left} à ${at}`,
+      ].filter(Boolean),
     },
   },
 };
@@ -140,6 +145,8 @@ const PACE = { settle: 10, alert: 130, used: 90 };
 // The latest limits any session measured, shared through $.store.
 const LIMITS_KEY = "rateLimits";
 const TONES = { calm: "#3fa66b", fast: "#d9962b", alert: "#d64545" };
+// The share projected, faded: its tone at this opacity (an alpha in hex).
+const FADED = "59";
 const grey = (alpha) => `rgba(128,128,128,${alpha})`;
 // A gauge: its bar, and how far the mark where the time stands goes past it above and below (px).
 const GAUGE = { width: 72, height: 9, overhang: 3 };
@@ -448,9 +455,10 @@ function drawLine(elements, columns, now) {
 }
 
 // A tooltip: a string with a line per fact, or an array of lines (empty: a blank line).
+// A line is a string (empty: a blank line) or { text, color }, which has a legend: a swatch of the color.
 const lines = (tip) => (Array.isArray(tip) ? tip : tip.split("\n"));
 // A tooltip as plain text, for an Svg's alt.
-const plain = (tip) => lines(tip).join("\n");
+const plain = (tip) => lines(tip).map((line) => line.text ?? line).join("\n");
 
 // Every block carries its details in a card shown on hover anywhere over it, the band's full height
 // (the line stretches its blocks), laid over the band. Plain images, no interactive frame: the
@@ -466,7 +474,10 @@ function withTip({ Box, Text }, key, parts, tip, gap = 0, grow = false) {
     backgroundColor: TIP.back,
     paddingX: 1,
     // One line each, the first the title when there are more.
-    children: lines(tip).map((line, i, all) => Text({ color: TIP.text, bold: i === 0 && all.length > 1, wrap: "truncate-end", children: line || " " })),
+    children: lines(tip).map((line, i, all) => {
+      const text = Text({ color: TIP.text, bold: i === 0 && all.length > 1, wrap: "truncate-end", children: line.text ?? (line || " ") });
+      return line.color ? Box({ flexDirection: "row", columnGap: 1, children: [Text({ color: line.color, children: "■" }), text] }) : text;
+    }),
   });
   return Box({ key, marginLeft: gap, ...(grow ? { flexGrow: 1, flexShrink: 1, minWidth: 0 } : { flexShrink: 0 }), flexDirection: "row", columnGap: 1, alignItems: "center", children: card ? [...parts, card] : parts });
 }
@@ -528,13 +539,17 @@ function gaugeBlock({ Box, Svg, Text }, g, now, rank) {
   // The reset's time, and its day when it is a day or more away.
   const at = g.left === null ? "" : (g.left >= 24 * H ? T.weekday(g.reset) + " " : "") + clockTime(g.reset);
   const left = g.left === null ? "" : duration(g.left);
-  const tip = g.unknown ? `${name}\n${T.tips.unmeasured}` : T.tips.gauge(name, value, g.elapsed === null ? null : Math.round(g.elapsed), pace, left, at);
+  // The lines on the share used, the time elapsed and the pace have the colors they have on the gauge as legends.
+  const legend = { used: TONES[g.tone], elapsed: OTTO_COLOR, pace: TONES[g.tone] + FADED };
+  const tip = g.unknown
+    ? `${name}\n${T.tips.unmeasured}`
+    : T.tips.gauge(name, value, g.elapsed === null ? null : Math.round(g.elapsed), pace, left, at).map((line) => (line.mark ? { text: line.text, color: legend[line.mark] } : line));
   // Only the bar is colored, and the value turns red on alert: the label keeps the theme's color.
   const valueText = Text({ key: "v", bold: true, children: value, ...(g.tone === "alert" && { color: "red" }) });
   const labelText = Text({ key: "l", dimColor: true, children: label });
   // The bar flexes: its box takes the room left, and the drawing fills its box. In text it is drawn at the cells
   // drawLine gives it.
-  const svgBar = () => Box({ key: "bar", flexGrow: 1, flexShrink: 1, minWidth: 0, children: [Svg({ key: "svg", source: gaugeSvg(g), alt: tip, height: GAUGE.height + 2 * GAUGE.overhang })] });
+  const svgBar = () => Box({ key: "bar", flexGrow: 1, flexShrink: 1, minWidth: 0, children: [Svg({ key: "svg", source: gaugeSvg(g), alt: plain(tip), height: GAUGE.height + 2 * GAUGE.overhang })] });
   const textBar = (n) => Box({ key: "bar", flexShrink: 0, children: textRuns(Text, gaugeText(g, n)) });
   const cells = label.length + 1 + (Svg ? Math.ceil(GAUGE.width / 8) : TEXT_GAUGE) + 1 + value.length;
   // Only the bar gives: its label and value keep their room, on one line.
@@ -647,7 +662,7 @@ function turnsSvg(deltas) {
 // when the pace runs past the limit), and marked in Otto's blue where the time stands.
 function gaugeSvg(g) {
   const color = TONES[g.tone];
-  const body = span(0, clamp(g.projected ?? 0), color + "59") + span(0, clamp(g.used), color);
+  const body = span(0, clamp(g.projected ?? 0), color + FADED) + span(0, clamp(g.used), color);
   return barSvg(GAUGE.height, body, g.elapsed === null ? [] : [clamp(g.elapsed)]);
 }
 
