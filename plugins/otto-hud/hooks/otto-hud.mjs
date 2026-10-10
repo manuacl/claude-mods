@@ -39,7 +39,7 @@ const TEXT = {
       description: "Otto HUD: /otto-hud demo plays every Otto animation in the band, /otto-hud <animation> one of them",
       usage: (names) => `Usage: /otto-hud demo, or /otto-hud <animation>: ${names}`,
       one: (name) => `Otto plays ${name} above the prompt.`,
-      started: "Otto plays all his animations above the prompt (about 75 s). Hover him to read each one's tooltip.",
+      started: "Otto plays all his animations above the prompt (about 95 s). Hover him to read each one's tooltip.",
     },
     moods: {
       idle: "Otto is resting",
@@ -50,6 +50,7 @@ const TEXT = {
       error: (tool) => `${tool} failed`,
       done: "Turn done",
       failed: "The turn stopped on an error",
+      asleep: (limit, at) => (limit ? `Otto is asleep: ${limit} reached` + (at ? ` until ${at}` : "") : "Otto is asleep: a limit is reached"),
     },
     // A title, then one line per fact.
     tips: {
@@ -59,9 +60,9 @@ const TEXT = {
       turns: (list) => `Tokens added by each recent prompt\n${list || "None measured yet"}`,
       stack: (clear) => (clear ? "What you see in the sky" : "What covers the sky"),
       // The lines a part of the gauge stands for say which (mark), for their legend.
-      gauge: (name, used, elapsed, pace, left, at) => [
+      gauge: (name, used, elapsed, pace, left, at, reached) => [
         name,
-        { mark: "used", text: `${used} used` },
+        { mark: "used", text: reached ? `${used} used: limit reached` : `${used} used` },
         elapsed !== null && { mark: "elapsed", text: `${elapsed}% of the time elapsed` },
         pace && { mark: "pace", text: pace.hit ? `100% in ${pace.hit} at this pace` : `${pace.end} by the reset at this pace` },
         left && `Resets in ${left} at ${at}`,
@@ -85,7 +86,7 @@ const TEXT = {
       description: "Otto HUD : /otto-hud demo joue toutes les animations d'Otto dans la barre, /otto-hud <animation> l'une d'elles",
       usage: (names) => `Usage : /otto-hud demo, ou /otto-hud <animation> : ${names}`,
       one: (name) => `Otto joue ${name} au-dessus du prompt.`,
-      started: "Otto joue toutes ses animations au-dessus du prompt (environ 75 s). Survolez-le pour lire la bulle de chacune.",
+      started: "Otto joue toutes ses animations au-dessus du prompt (environ 95 s). Survolez-le pour lire la bulle de chacune.",
     },
     moods: {
       idle: "Otto se repose",
@@ -96,6 +97,7 @@ const TEXT = {
       error: (tool) => `${tool} a échoué`,
       done: "Tour terminé",
       failed: "Le tour s'est arrêté sur une erreur",
+      asleep: (limit, at) => (limit ? `Otto dort : ${limit} atteinte` + (at ? ` jusqu'à ${at}` : "") : "Otto dort : une limite est atteinte"),
     },
     tips: {
       weather: (word, used, toCompact, at, tokens, window) =>
@@ -103,9 +105,9 @@ const TEXT = {
       unmeasured: "Pas encore mesurée",
       turns: (list) => `Tokens ajoutés par chaque prompt récent\n${list || "Aucun mesuré pour l'instant"}`,
       stack: (clear) => (clear ? "Ce qu'on voit dans le ciel" : "Ce qui couvre le ciel"),
-      gauge: (name, used, elapsed, pace, left, at) => [
+      gauge: (name, used, elapsed, pace, left, at, reached) => [
         name,
-        { mark: "used", text: `${used} utilisés` },
+        { mark: "used", text: reached ? `${used} utilisés : limite atteinte` : `${used} utilisés` },
         elapsed !== null && { mark: "elapsed", text: `${elapsed}% du temps écoulé` },
         pace && { mark: "pace", text: pace.hit ? `100% dans ${pace.hit} à ce rythme` : `${pace.end} à la remise à zéro à ce rythme` },
         left && `Remise à zéro dans ${left} à ${at}`,
@@ -211,7 +213,10 @@ export function register(on, options) {
     await $.command.register({ name: "otto-hud", description: T.demo.description, argumentHint: "demo | thinking | laptop | … | dizzy" });
     // Once a minute the time gone moves on.
     minuteTimer?.cancel();
-    minuteTimer = $.clock.every(60_000, () => $.ui.invalidate("ui.render"));
+    minuteTimer = $.clock.every(60_000, async () => {
+      await limitChanged($);
+      $.ui.invalidate("ui.render");
+    });
     return started;
   });
 
@@ -269,7 +274,10 @@ export function register(on, options) {
 
   on("session.measure", async ($, e, next) => {
     measured = true;
-    if (e.changed.includes("rateLimits") && e.rateLimits.length) rateLimits = e.rateLimits;
+    if (e.changed.includes("rateLimits") && e.rateLimits.length) {
+      rateLimits = e.rateLimits;
+      await limitChanged($);
+    }
     // The figures come with the event: nothing to ask, no token spent.
     const c = e.context;
     if (e.changed.includes("context") && c.tokens > 0) live = { tokens: c.tokens, window: c.window, percent: Math.round(c.percent ?? (c.tokens / c.window) * 100) };
@@ -370,20 +378,33 @@ function currentLimits(list, now, measured) {
   return limits;
 }
 
-// One limit's numbers: share used, share of the window's time gone and share projected by the reset
-// (null without a window), tone, ms left before the reset (null once past) and before the limit
-// runs out at this pace (null if it does not).
+// One limit's numbers: share used, whether it is all used (reached), share of the window's time gone
+// and share projected by the reset (null without a window, or once reached: no pace to tell), tone,
+// ms left before the reset (null once past) and before the limit runs out at this pace (null if it does not).
 function gaugeOf(limit, now) {
   const used = Math.max(0, limit.percentUsed);
+  const reached = used >= 100;
   const reset = Date.parse(limit.resetsAt ?? "");
   const left = reset > now ? reset - now : null;
   const span = LIMIT_SPAN[limit.kind];
   const elapsed = span && left !== null ? clamp(100 - (left / span) * 100) : null;
-  const projected = elapsed >= PACE.settle ? (used / elapsed) * 100 : null;
+  const projected = elapsed >= PACE.settle && !reached ? (used / elapsed) * 100 : null;
   const tone = used >= PACE.used || projected > PACE.alert ? "alert" : projected > 100 ? "fast" : "calm";
   // At the same pace, the rest of the limit lasts (100 - used) / used of the time gone.
-  const runsOut = projected > 100 && used < 100 ? ((100 - used) / used) * (span - left) : null;
-  return { kind: limit.kind, used, elapsed, projected, tone, left, reset, runsOut, unknown: !!limit.unknown };
+  const runsOut = projected > 100 ? ((100 - used) / used) * (span - left) : null;
+  return { kind: limit.kind, used, reached, elapsed, projected, tone, left, reset, runsOut, unknown: !!limit.unknown };
+}
+
+// The limit reached that resets last, as gaugeOf counts it, or null. Claude may go on past it (usage credits): the
+// band says the limit is reached, never that Claude waits.
+function reachedLimit(now) {
+  const reached = currentLimits(rateLimits, now, measured).map((limit) => gaugeOf(limit, now)).filter((g) => g.reached && !g.unknown);
+  return reached.reduce((last, g) => (last && !(g.reset > last.reset) ? last : g), null);
+}
+
+// When a limit resets: its time, and its day when it is a day or more away; "" once past.
+function resetTime(g) {
+  return g.left === null ? "" : (g.left >= 24 * H ? T.weekday(g.reset) + " " : "") + clockTime(g.reset);
 }
 
 // 42 min, 3h02, 2d23h (2j23h in French).
@@ -542,14 +563,13 @@ function gaugeBlock({ Box, Svg, Text }, g, now, rank) {
   // The 5-hour limit is near enough to say at what time it runs out.
   const when = (ms) => (g.kind === "five_hour" ? `${duration(ms)} (${clockTime(now + ms)})` : duration(ms));
   const pace = g.projected === null ? null : { end: T.pct(Math.round(g.projected)), hit: g.runsOut === null ? null : when(g.runsOut) };
-  // The reset's time, and its day when it is a day or more away.
-  const at = g.left === null ? "" : (g.left >= 24 * H ? T.weekday(g.reset) + " " : "") + clockTime(g.reset);
+  const at = resetTime(g);
   const left = g.left === null ? "" : duration(g.left);
   // The lines on the share used, the time elapsed and the pace have the colors they have on the gauge as legends.
   const legend = { used: TONES[g.tone], elapsed: OTTO_COLOR, pace: TONES[g.tone] + FADED };
   const tip = g.unknown
     ? `${name}\n${T.tips.unmeasured}`
-    : T.tips.gauge(name, value, g.elapsed === null ? null : Math.round(g.elapsed), pace, left, at).map((line) => (line.mark ? { text: line.text, color: legend[line.mark], mark: line.mark === "elapsed" } : line));
+    : T.tips.gauge(name, value, g.elapsed === null ? null : Math.round(g.elapsed), pace, left, at, g.reached).map((line) => (line.mark ? { text: line.text, color: legend[line.mark], mark: line.mark === "elapsed" } : line));
   // Only the bar is colored, and the value turns red on alert: the label keeps the theme's color.
   const valueText = Text({ key: "v", bold: true, children: value, ...(g.tone === "alert" && { color: "red" }) });
   const labelText = Text({ key: "l", dimColor: true, children: label });
@@ -567,7 +587,7 @@ function gaugeBlock({ Box, Svg, Text }, g, now, rank) {
 // ---------- Otto ----------
 
 // The drawing for what Claude is doing, its tooltip, and for a reaction (`then`) the mood it goes on to once played.
-function moodOf(name, tool, forced) {
+function moodOf(name, tool, forced, now) {
   const choose = (list) => forced ?? pick(list);
   const play = (look, tip, then, ms = PLAY_MS[look]) => ({ look, tip, then, ms });
   if (name === "thinking") return play(choose(["thinking", "puzzled", "detective"]), T.moods.thinking);
@@ -575,6 +595,12 @@ function moodOf(name, tool, forced) {
   if (name === "error") return play(choose(["dejected", "ink", "crow"]), T.moods.error(tool), "working");
   if (name === "done") return play(choose(["lightbulb", "jump", "dance", "twirl"]), T.moods.done, "idle");
   if (name === "failed") return play("dejected", T.moods.failed, "idle");
+  // At rest while a limit is reached: asleep until it resets (the last to reset, when several are).
+  const full = !forced && (name === "idle" || name === "rest") ? reachedLimit(now) : null;
+  if (forced === "asleep" || full) {
+    const limit = full && (T.limits[full.kind]?.[1] ?? full.kind);
+    return play("asleep", T.moods.asleep(limit && limit[0].toLowerCase() + limit.slice(1), full && resetTime(full)));
+  }
   // At rest while subagents work: sitting, waiting on them.
   if (agents.size > 0 && !forced && (name === "idle" || name === "rest")) return play("settle", T.moods.agents(agents.size));
   // Dizzy when compaction is near.
@@ -583,6 +609,12 @@ function moodOf(name, tool, forced) {
   if (name === "rest") return play("idle", T.moods.idle, "idle", PLAY_EVERY);
   const look = forced ?? (Math.random() < 0.15 ? "twirl" : pick(["lookaround", "bubbles", "wave", "shout", "tap"]));
   return play(look, T.moods.idle, forced ? undefined : "rest");
+}
+
+// The limits moved, or the time did: Otto at rest falls asleep when one is reached, and wakes when it resets.
+async function limitChanged($) {
+  if (!mood || mood.forced || (mood.name !== "idle" && mood.name !== "rest")) return;
+  if ((mood.look === "asleep") !== !!reachedLimit(await $.clock.now())) await setMood($, "idle");
 }
 
 // A subagent started or ended: Otto at rest takes up the work, or lays it down, with the count.
@@ -600,7 +632,7 @@ async function setMood($, name, tool, forced) {
     moodTimer = $.clock.after(wait, () => setMood($, name, tool));
     return;
   }
-  mood = { name, tool, at: now, ...moodOf(name, tool, forced) };
+  mood = { name, tool, forced, at: now, ...moodOf(name, tool, forced, now) };
   if (mood.then) moodTimer = $.clock.after(mood.ms, () => setMood($, mood.then, mood.tool));
   $.ui.invalidate("ui.render");
 }
@@ -626,6 +658,7 @@ const DEMO = [
   ["idle", "", "tap"],
   ["idle", "", "settle"],
   ["idle", "", "dizzy"],
+  ["idle", "", "asleep"],
 ];
 let demoTimer = null;
 

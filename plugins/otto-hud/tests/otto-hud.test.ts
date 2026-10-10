@@ -183,6 +183,83 @@ test("the pace says when a limit runs out, but not in the first hours of a windo
   expect(alts).toContain("7-day limit\n5% used\n5% of the time elapsed\nResets in 6d16h at " + day(NOW + 160 * 3_600_000));
 });
 
+// Every state the 5-hour gauge can show: its tooltip, its value, its tone (the bar's color, and the value in red on
+// alert). `left`: hours before the reset, out of 5; null: no reading of it.
+const H = 3_600_000;
+const TONE = { calm: "#3fa66b", fast: "#d9962b", alert: "#d64545" };
+const GAUGE_STATES: [string, number | null, number, string, string, keyof typeof TONE][] = [
+  ["unknown before any reading", null, 0, "Not measured yet", "—", "calm"],
+  ["too early in the window for a pace", 5, 4.75, `5% used\n5% of the time elapsed\nResets in 4h45 at ${at(NOW + 4.75 * H)}`, "5%", "calm"],
+  ["calm: under the limit by the reset", 20, 3, `20% used\n40% of the time elapsed\n50% by the reset at this pace\nResets in 3h00 at ${at(NOW + 3 * H)}`, "20%", "calm"],
+  ["fast: past the limit before the reset", 50, 3, `50% used\n40% of the time elapsed\n100% in 2h00 (${at(NOW + 2 * H)}) at this pace\nResets in 3h00 at ${at(NOW + 3 * H)}`, "50%", "fast"],
+  ["alert: well past it at this pace", 60, 3, `60% used\n40% of the time elapsed\n100% in 1h20 (${at(NOW + 80 * 60_000)}) at this pace\nResets in 3h00 at ${at(NOW + 3 * H)}`, "60%", "alert"],
+  ["alert: 90% used already", 90, 1.25, `90% used\n75% of the time elapsed\n100% in 25 min (${at(NOW + 25 * 60_000)}) at this pace\nResets in 1h15 at ${at(NOW + 1.25 * H)}`, "90%", "alert"],
+  ["reached: no pace, the reset", 100, 1, `100% used: limit reached\n80% of the time elapsed\nResets in 1h00 at ${at(NOW + H)}`, "100%", "alert"],
+  ["past its reset: empty", 80, -0.1, "0% used", "0%", "calm"],
+];
+
+for (const [state, used, left, tip, value, tone] of GAUGE_STATES) {
+  test(`the 5h gauge, ${state}`, async ($, on) => {
+    world(on);
+    withUsage(on, 300_000, used === null ? [] : [{ kind: "five_hour", percentUsed: used, resetsAt: new Date(NOW + left * H).toISOString() }]);
+    await start($);
+    const { ui, alts } = await band($);
+    expect(alts).toContain(`5-hour limit\n${tip}`);
+    const bar = (await ui.findAll({ type: "Svg" })).find((s: any) => s.props?.alt === `5-hour limit\n${tip}`).props;
+    // Empty or unknown, only the grey track shows.
+    expect(bar.source).toContain(["—", "0%"].includes(value) ? 'fill="rgba(128,128,128,0.2)"' : `fill="${TONE[tone]}"`);
+    const shown = (await ui.findAll({ type: "Text" })).find((t: any) => t.text === value && t.props?.bold);
+    expect(shown.props.color).toBe(tone === "alert" ? "red" : undefined);
+  });
+}
+
+test("a limit reached, Otto sleeps until it resets, then rests again", async ($, on) => {
+  const clock = world(on);
+  withUsage(on, 300_000, [{ kind: "five_hour", percentUsed: 100, resetsAt: new Date(NOW + H).toISOString() }]);
+  await start($);
+  const tip = async () => ottoTip((await band($)).alts);
+  expect(await tip()).toBe(`Otto is asleep: 5-hour limit reached until ${at(NOW + H)}`);
+  await clock.advance(H - 60_000);
+  expect(await tip()).toBe(`Otto is asleep: 5-hour limit reached until ${at(NOW + H)}`);
+  // The minute after the reset, he wakes.
+  await clock.advance(2 * 60_000);
+  expect(await tip()).toBe("Otto is resting");
+});
+
+test("a limit reached during a response puts Otto at rest to sleep; when several are, until the last reset", async ($, on) => {
+  world(on);
+  withUsage(on, 300_000);
+  on("session.measure", (_$: any, e: any) => ({ changed: e.changed }));
+  await start($);
+  const tip = async () => ottoTip((await band($)).alts);
+  expect(await tip()).toBe("Otto is resting");
+  const both = [
+    { kind: "five_hour", percentUsed: 100, resetsAt: new Date(NOW + H).toISOString() },
+    { kind: "seven_day", percentUsed: 100, resetsAt: new Date(NOW + 30 * H).toISOString() },
+  ];
+  await $.session.measure({ context: { tokens: 300_000, window: 1_000_000, percent: 30 }, rateLimits: both, changed: ["rateLimits"] } as any);
+  expect(await tip()).toBe(`Otto is asleep: 7-day limit reached until ${day(NOW + 30 * H)}`);
+});
+
+test("a spend limit reached, with no reset to tell: the gauge and Otto say so, no time", async ($, on) => {
+  world(on);
+  withUsage(on, 300_000, [{ kind: "spend_limit", percentUsed: 100 }]);
+  await start($);
+  const { alts } = await band($);
+  expect(alts).toContain("Spend limit\n100% used: limit reached");
+  expect(ottoTip(alts)).toBe("Otto is asleep: spend limit reached");
+});
+
+test("in French, the limit reached and Otto asleep", async ($, on) => {
+  world(on);
+  withUsage(on, 300_000, [{ kind: "five_hour", percentUsed: 100, resetsAt: new Date(NOW + H).toISOString() }]);
+  on("config.list", () => ({ value: [{ key: "language", value: "french" }] }));
+  await start($);
+  const { alts } = await band($);
+  expect(alts).toContain(`Limite 5 heures\n100% utilisés : limite atteinte\n80% du temps écoulé\nRemise à zéro dans 1h00 à ${at(NOW + H)}`);
+  expect(ottoTip(alts)).toBe(`Otto dort : limite 5 heures atteinte jusqu'à ${at(NOW + H)}`);
+});
+
 test("the context's composition is in the forecast's tooltip, not on the band, without color swatches", async ($, on) => {
   world(on);
   withUsage(on, 300_000);
@@ -407,7 +484,7 @@ test("/otto-hud demo plays every animation in turn, then Otto rests", async ($, 
     seen.add(String(await tip()));
     await clock.advance(1_000);
   }
-  for (const t of ["Claude is thinking", "Claude is using Bash", "Claude is using Edit", "Bash failed", "Turn done", "Otto is dizzy: compaction is near"]) expect(seen).toContain(t);
+  for (const t of ["Claude is thinking", "Claude is using Bash", "Claude is using Edit", "Bash failed", "Turn done", "Otto is dizzy: compaction is near", "Otto is asleep: a limit is reached"]) expect(seen).toContain(t);
   expect(await tip()).toBe("Otto is resting");
 });
 
