@@ -754,6 +754,24 @@ export const MOODS = {
     shadowOf("22;20;22", 0.6),
   ),
 
+  // A limit is reached: sunk onto the ground as in dejected, she sleeps until it resets, eyes shut, breathing slowly,
+  // Zs rising from her head one after the other. Each Z has a white edge, to show on a dark background too.
+  asleep: (() => {
+    const { wrapHead, wrapLegs, shadow } = sunk();
+    const Z = `M-2 -2 h4 l-4 4 h4`;
+    const zs = [0, 1, 2]
+      .map((i) => {
+        const b = `begin="${1 + i}s"`;
+        return `<g opacity="0">${anim("opacity", "0;1;1;0", 3, `keyTimes="0;.2;.7;1" ${b}`)}` +
+          `<g>${move(`${X + 17} 22;${X + 25} 12;${X + 33} 2`, 3, b)}` +
+          `<g><animateTransform attributeName="transform" type="scale" values=".8;1.4;1.9" dur="3s" ${loop} ${b}/>` +
+          `<path d="${Z}" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>` +
+          `<path d="${Z}" fill="none" stroke="${C.line}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></g></g></g>`;
+      })
+      .join("");
+    return svg(grow(body([], { wrapHead, wrapLegs }) + wrapHead(faceIn({ closed: "sad" }, "flat"))) + zs, shadow);
+  })(),
+
   // Compaction is near.
   dizzy: svg(
     `<g>${turn([0, 6, 0, -6, 0].map((a) => `${a} ${X} ${FLOOR}`).join(";"), 1.8, later(spline(4)))}${grow(body() + faceIn({ spiral: true }, "wavy"))}</g>` +
@@ -776,7 +794,7 @@ export const PLAY_MS = {
   thinking: 4000, puzzled: 4000, detective: 5500,
   laptop: 4500, desktop: 4500,
   dejected: 4500, ink: 3000, crow: 8500,
-  lightbulb: 3200, jump: 3200, dance: 3200, dizzy: 4000,
+  lightbulb: 3200, jump: 3200, dance: 3200, dizzy: 4000, asleep: 4000,
 };
 
 // How long a mood holds the band before Claude's next move may replace it: the detective brings the magnifier to her
