@@ -17,9 +17,9 @@ const CATEGORIES = [
   { name: "Autocompact buffer", tokens: 90_000, kind: "buffer" },
 ];
 
-function world(on: any, env: Record<string, string> = {}) {
+function world(on: any, env: Record<string, string> = {}, store: Record<string, unknown> = {}) {
   const clock = mock.clock(on, { now: NOW });
-  mock.store(on, {});
+  mock.store(on, store);
   mock.env(on, env);
   on("session.start", (_$: any, e: any) => ({ cwd: e.cwd ?? "/tmp" }));
   on("ui.invalidate", () => ({ value: undefined }));
@@ -137,16 +137,36 @@ test("before the limits are measured, the 5h and 7d gauges hold their place, emp
   expect(alts).toContain("7-day limit\nNot measured yet");
 });
 
-test("a window past its reset, or left out of the reading, shows empty at 0%", async ($, on) => {
+test("a session shows only the limits it measured, never those another session stored, maybe on another account", async ($, on) => {
+  // What an earlier version shared across sessions, through the plugin's store.
+  const clock = world(on, {}, { rateLimits: { at: NOW, list: LIMITS } });
+  withUsage(on, 300_000, []);
+  await start($);
+  await clock.advance(60_000);
+  const { alts } = await band($);
+  expect(alts).toContain("5-hour limit\nNot measured yet");
+  expect(alts).toContain("7-day limit\nNot measured yet");
+});
+
+test("a window past its reset shows empty at 0%; one the reading leaves out holds its place, unknown", async ($, on) => {
   world(on);
   // The 5-hour window reset a minute ago; the reading has no 7-day window.
   withUsage(on, 300_000, [{ kind: "five_hour", percentUsed: 80, resetsAt: new Date(NOW - 60_000).toISOString() }]);
   await start($);
   const { texts, alts } = await band($);
-  expect(texts).toEqual(expect.arrayContaining(["5h", "7d"]));
-  expect(texts.filter((t: string) => t === "0%")).toHaveLength(2);
+  expect(texts).toEqual(["30%", "—", "5h", "0%", "7d", "—"]);
   expect(alts).toContain("5-hour limit\n0% used");
-  expect(alts).toContain("7-day limit\n0% used");
+  expect(alts).toContain("7-day limit\nNot measured yet");
+});
+
+test("once a response is measured without limits (an account billed on usage), the 5h and 7d gauges go", async ($, on) => {
+  world(on);
+  withUsage(on, 300_000, []);
+  on("session.measure", (_$: any, e: any) => ({ changed: e.changed }));
+  await start($);
+  await $.session.measure({ context: { tokens: 300_000, window: 1_000_000, percent: 30 }, rateLimits: [], changed: ["context"] } as any);
+  const { texts } = await band($);
+  expect(texts).toEqual(["30%", "—"]);
 });
 
 test("the pace says when a limit runs out, but not in the first hours of a window", async ($, on) => {

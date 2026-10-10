@@ -142,8 +142,6 @@ const LIMIT_PLACE = { five_hour: 0, seven_day: 1, spend_limit: 2 };
 // `alert`, or past `used` percent already: red. Before `settle` percent of the window has gone,
 // too little time to tell a pace.
 const PACE = { settle: 10, alert: 130, used: 90 };
-// The latest limits any session measured, shared through $.store.
-const LIMITS_KEY = "rateLimits";
 const TONES = { calm: "#3fa66b", fast: "#d9962b", alert: "#d64545" };
 // The share projected, faded: its tone at this opacity (an alpha in hex).
 const FADED = "59";
@@ -185,8 +183,12 @@ const READINGS = { plugin: "otto-hud", key: "readings" };
 let live = null;
 // The latest breakdown: { categories } or null.
 let breakdown = null;
-// The account's limits as last measured: { at (ms), list: SessionRateLimit[] }.
-let account = { at: 0, list: [] };
+// The account's limits as this session last measured them (SessionRateLimit[]): its own, never another
+// session's, which may run on another account.
+let rateLimits = [];
+// Whether a response measured the session yet: its first measure names every unit it has, so
+// limits still unknown then are none (an account billed on usage).
+let measured = false;
 let minuteTimer = null;
 // What Otto is doing: { name, look (the drawing), tip, at, then, ms }; see moodOf.
 let mood = null;
@@ -200,20 +202,16 @@ export function register(on, options) {
   on("session.start", async ($, e, next) => {
     const started = await next(e);
     T = TEXT[await languageOf($, options?.language)];
-    [breakdown, account] = [null, { at: 0, list: [] }];
+    [breakdown, rateLimits, measured] = [null, [], false];
     readings = (await $.state.get(READINGS)).value ?? [];
     agents.clear();
-    await syncLimits($);
     // A reload's reading stands for the last one, not for another turn.
     await takeReading($, false);
     await setMood($, "idle");
     await $.command.register({ name: "otto-hud", description: T.demo.description, argumentHint: "demo | thinking | laptop | … | dizzy" });
-    // Once a minute the time gone moves on, and another session may have measured the limits since.
+    // Once a minute the time gone moves on.
     minuteTimer?.cancel();
-    minuteTimer = $.clock.every(60_000, async () => {
-      await syncLimits($);
-      $.ui.invalidate("ui.render");
-    });
+    minuteTimer = $.clock.every(60_000, () => $.ui.invalidate("ui.render"));
     return started;
   });
 
@@ -270,7 +268,8 @@ export function register(on, options) {
   });
 
   on("session.measure", async ($, e, next) => {
-    if (e.changed.includes("rateLimits") && e.rateLimits.length) await syncLimits($, e.rateLimits);
+    measured = true;
+    if (e.changed.includes("rateLimits") && e.rateLimits.length) rateLimits = e.rateLimits;
     // The figures come with the event: nothing to ask, no token spent.
     const c = e.context;
     if (e.changed.includes("context") && c.tokens > 0) live = { tokens: c.tokens, window: c.window, percent: Math.round(c.percent ?? (c.tokens / c.window) * 100) };
@@ -282,7 +281,7 @@ export function register(on, options) {
     // The terminal draws the line in text: no Svg there (the test kit's table has one, hence the surface).
     const resolved = $.ui.resolve(e);
     const el = e.surface === "terminal" ? { ...resolved, Svg: undefined } : resolved;
-    const idle = readings.length === 0 && account.list.length === 0;
+    const idle = readings.length === 0 && rateLimits.length === 0;
     if (e.props.hasSurvey || idle) return next(e);
     const line = drawLine(el, e.props.bodyColumns ?? 80, await $.clock.now());
     // The mods after us go under our line, without a blank row when they draw nothing.
@@ -316,10 +315,7 @@ async function takeReading($, isTurn = true) {
       await $.state.set(READINGS, readings);
       breakdown = context.breakdown ? { categories: context.breakdown.categories ?? [] } : null;
     }
-    // On start the local reading may be stale (an idle session): the shared one wins, and the local
-    // one is published only when none exists yet. After a turn the local one is the freshest.
-    const list = usage.rateLimits ?? [];
-    if (list.length > 0 && (account.list.length === 0 || readings.length > 1)) await syncLimits($, list);
+    if (usage.rateLimits?.length) rateLimits = usage.rateLimits;
   } catch {
     // No reading this turn; the line keeps the last one.
   }
@@ -362,26 +358,15 @@ function forecastNow() {
 
 // ---------- Limits ----------
 
-// The limits are the account's, so the freshest reading of any session wins. With `fresh` (this
-// session just measured them): keep them, and store them unless the store holds a later one.
-// Without: take the stored ones when they are later than ours. An unreadable store changes nothing.
-async function syncLimits($, fresh) {
-  const stored = await $.store.get(LIMITS_KEY).catch(() => null);
-  if (fresh) {
-    account = { at: await $.clock.now(), list: fresh };
-    if (!(stored?.at > account.at)) await $.store.set(LIMITS_KEY, account);
-  } else if (stored?.at > account.at && Array.isArray(stored.list)) account = stored;
-}
-
-// The limits as they stand now. A window past its reset is empty until it is used again, and a
-// subscription always has both windows: one the reading leaves out is empty too. Empty is 0%,
-// with no time to tell until the window starts again.
-function currentLimits(list, now) {
+// The limits as they stand now. A window past its reset is empty until it is used again: 0%,
+// with no time to tell until the window starts again. The 5-hour and 7-day gauges go together:
+// one the reading leaves out holds its place, unknown, as both do before any reading; once
+// measured, a session with neither has no such limits, and no gauges.
+function currentLimits(list, now, measured) {
   const empty = (kind) => ({ kind, percentUsed: 0 });
   const limits = list.map((limit) => (Date.parse(limit.resetsAt ?? "") <= now ? empty(limit.kind) : limit));
-  // Before any reading of them (a session's start), the 5-hour and 7-day gauges hold their place, empty and unknown.
-  const known = limits.some((limit) => limit.kind in LIMIT_SPAN);
-  for (const kind of Object.keys(LIMIT_SPAN)) if (!limits.some((limit) => limit.kind === kind)) limits.push(known ? empty(kind) : { ...empty(kind), unknown: true });
+  if (measured && !limits.some((limit) => limit.kind in LIMIT_SPAN)) return limits;
+  for (const kind of Object.keys(LIMIT_SPAN)) if (!limits.some((limit) => limit.kind === kind)) limits.push({ ...empty(kind), unknown: true });
   return limits;
 }
 
@@ -433,7 +418,7 @@ function drawLine(elements, columns, now) {
   if (cur) blocks.push(turnsBlock(elements));
   // In line order.
   const place = (limit) => LIMIT_PLACE[limit.kind] ?? 9;
-  currentLimits(account.list, now)
+  currentLimits(rateLimits, now, measured)
     .sort((a, b) => place(a) - place(b))
     .forEach((limit, i) => blocks.push(gaugeBlock(elements, gaugeOf(limit, now), now, 80 - i)));
 
