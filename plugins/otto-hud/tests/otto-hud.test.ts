@@ -90,6 +90,20 @@ test("the forecast and its percent follow the context after each response, live;
   expect(texts).toContain("—");
 });
 
+test("within a turn, each main-loop tool call reads the context the last response left", async ($, on) => {
+  world(on);
+  let tokens = 600_000;
+  withUsage(on, () => tokens);
+  on("tool.call", () => ({ result: "ok", isError: false }));
+  await start($);
+  // A response asks for a tool: the context grew to 700k, and no session.measure comes before the turn's end.
+  tokens = 700_000;
+  await $.tool.call({ tool: "Bash", input: {} } as any);
+  const { texts } = await band($);
+  expect(texts).toContain("70%");
+  expect(texts).toContain("—");
+});
+
 test("the terminal draws the line in text, without Otto or tooltips", async ($, on) => {
   world(on);
   withUsage(on, 600_000);
