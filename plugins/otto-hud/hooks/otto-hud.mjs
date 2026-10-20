@@ -14,7 +14,7 @@
 // auto-compact, what the context is made of, and the account limits.
 //
 // session.start / turn.complete: read $.session.usage() (context, breakdown "summary" = local
-// estimates, rate limits). session.measure: a fresher reading of the limits. turn.start, tool.call,
+// estimates, rate limits). session.measure / tool.call: the context and limits between readings. turn.start, tool.call,
 // turn.complete: Otto's mood. ui.render (AbovePrompt): the line, built from blocks; the least
 // important ones go first when the band is narrow.
 //
@@ -180,8 +180,8 @@ const pick = (list) => list[Math.floor(Math.random() * list.length)];
 let readings = [];
 const READINGS = { plugin: "otto-hud", key: "readings" };
 // The context as the last response left it, between readings ({ tokens, window, percent } or null): what
-// session.measure reports after each response, for the forecast and its percent to follow it live. Not a reading, so
-// the prompts' bars only move at the end of a turn.
+// session.measure reports at a turn's end, or the main loop's tool calls read within it, for the forecast and its
+// percent to follow it live. Not a reading, so the prompts' bars only move at the end of a turn.
 let live = null;
 // The latest breakdown: { categories } or null.
 let breakdown = null;
@@ -246,6 +246,8 @@ export function register(on, options) {
       return next(e);
     }
     const tool = String(e.tool).replace(/^mcp__.+?__/, "");
+    // session.measure only comes at the turn's end: each tool call follows a response, read its context (a free call).
+    setLive(await $.session.usage().then((u) => u.context, () => null));
     if (mood?.name === "working") {
       mood.tip = T.moods.working(tool);
       $.ui.invalidate("ui.render");
@@ -279,8 +281,7 @@ export function register(on, options) {
       await limitChanged($);
     }
     // The figures come with the event: nothing to ask, no token spent.
-    const c = e.context;
-    if (e.changed.includes("context") && c.tokens > 0) live = { tokens: c.tokens, window: c.window, percent: Math.round(c.percent ?? (c.tokens / c.window) * 100) };
+    if (e.changed.includes("context")) setLive(e.context);
     $.ui.invalidate("ui.render");
     return next(e);
   });
@@ -328,6 +329,11 @@ async function takeReading($, isTurn = true) {
     // No reading this turn; the line keeps the last one.
   }
   $.ui.invalidate("ui.render");
+}
+
+// The context as the last response left it, once one reported it.
+function setLive(c) {
+  if (c?.tokens > 0) live = { tokens: c.tokens, window: c.window, percent: Math.round(c.percent ?? (c.tokens / c.window) * 100) };
 }
 
 // Share of the way to auto-compact, or of the window when auto-compact is off.
